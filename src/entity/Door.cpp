@@ -32,9 +32,9 @@ void Door::tryOpen()
     if (m_state == DoorState::CLOSED) {
         m_state  = DoorState::OPENING;
         m_lerpT  = 0.0f;
-        EventBus::instance().emit("door_opened");
+        EventBus::instance().publish("door_opened");
     } else if (m_state == DoorState::LOCKED) {
-        EventBus::instance().emit("door_locked");
+        EventBus::instance().publish("door_locked");
     }
 }
 

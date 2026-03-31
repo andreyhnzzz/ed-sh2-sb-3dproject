@@ -12,7 +12,7 @@ public:
     static EventBus& instance();
 
     void subscribe(const std::string& event, Callback cb);
-    void emit(const std::string& event, const std::string& data = "");
+    void publish(const std::string& event, const std::string& data = "");
 
 private:
     EventBus() = default;

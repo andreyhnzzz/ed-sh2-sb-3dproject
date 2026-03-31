@@ -192,7 +192,7 @@ void Renderer::update(float dt, InputHandler* input)
     for (auto& door : m_doors) {
         if (door->playerCanEnter(playerPos)) {
             std::string target = door->targetRoom();
-            EventBus::instance().emit("room_changed", target);
+            EventBus::instance().publish("room_changed", target);
             SceneManager::instance().loadRoom(target);
         }
     }

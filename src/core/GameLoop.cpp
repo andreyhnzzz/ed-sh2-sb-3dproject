@@ -8,6 +8,7 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QOpenGLContext>
+#include <QOpenGLVersionFunctionsFactory>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QDebug>
 #include <QString>
@@ -38,15 +39,15 @@ void GameLoop::initializeGL()
     m_renderer     = new Renderer();
     m_renderer->initialize(width(), height());
 
-    auto* f = QOpenGLContext::currentContext()
-                  ->versionFunctions<QOpenGLFunctions_3_3_Core>();
+    auto* ctx = QOpenGLContext::currentContext();
+    auto* f = QOpenGLVersionFunctionsFactory::get<QOpenGLFunctions_3_3_Core>(ctx);
     if (f) {
         qDebug() << "OpenGL Version:"
                  << reinterpret_cast<const char*>(f->glGetString(GL_VERSION));
     }
     qDebug() << "EcoCampus v0.1 running";
 
-    EventBus::instance().emit("game_start");
+    EventBus::instance().publish("game_start");
 
     m_lastTime = std::chrono::steady_clock::now();
 

@@ -11,7 +11,7 @@ void EventBus::subscribe(const std::string& event, Callback cb)
     m_listeners[event].push_back(std::move(cb));
 }
 
-void EventBus::emit(const std::string& event, const std::string& data)
+void EventBus::publish(const std::string& event, const std::string& data)
 {
     auto it = m_listeners.find(event);
     if (it != m_listeners.end()) {
