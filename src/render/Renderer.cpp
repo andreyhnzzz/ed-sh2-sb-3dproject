@@ -66,6 +66,12 @@ static const float GROUND_VERTS[] = {
 static const unsigned int GROUND_INDICES[] = { 0,1,2, 2,3,0 };
 
 // ---------------------------------------------------------------------------
+Renderer::Renderer() = default;
+
+Renderer::Renderer(Renderer&&) noexcept = default;
+
+Renderer& Renderer::operator=(Renderer&&) noexcept = default;
+
 Renderer::~Renderer()
 {
     freeMesh(m_groundMesh);

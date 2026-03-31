@@ -18,8 +18,12 @@ struct MeshData {
 class Renderer : protected QOpenGLFunctions_3_3_Core
 {
 public:
-    explicit Renderer() = default;
+    Renderer();
     ~Renderer();
+    Renderer(Renderer&&) noexcept;
+    Renderer& operator=(Renderer&&) noexcept;
+    Renderer(const Renderer&) = delete;
+    Renderer& operator=(const Renderer&) = delete;
 
     void initialize(int w, int h);
     void resize(int w, int h);
