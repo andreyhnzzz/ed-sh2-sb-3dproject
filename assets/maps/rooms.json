@@ -1,0 +1,27 @@
+{
+  "rooms": [
+    {
+      "id": "exterior",
+      "name": "Exterior del Campus",
+      "cameras": [
+        { "switch_zone": [-100, 100, -100, 100],
+          "cam_pos": [0, 25, -30], "cam_target": [0, 0, 10], "fov": 55 },
+        { "switch_zone": [-50, -10, 0, 25],
+          "cam_pos": [-40, 8, -5], "cam_target": [-30, 2, 10], "fov": 60 },
+        { "switch_zone": [-10, 15, 5, 30],
+          "cam_pos": [5, 6, 0], "cam_target": [0, 1.5, 15], "fov": 65 },
+        { "switch_zone": [15, 50, -5, 20],
+          "cam_pos": [45, 10, -10], "cam_target": [30, 2.5, 5], "fov": 58 }
+      ],
+      "doors": [
+        { "id": "door_biblioteca", "position": [-30, 0, 3],
+          "target_room": "biblioteca_entrada", "locked": false },
+        { "id": "door_comedor", "position": [0, 0, 8],
+          "target_room": "comedor_exterior", "locked": false },
+        { "id": "door_aulas", "position": [30, 0, -1],
+          "target_room": "aulas_nivel1_pasillo", "locked": false }
+      ],
+      "bounds": [-100, 100, -100, 100]
+    }
+  ]
+}
