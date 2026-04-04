@@ -1,0 +1,5 @@
+{
+  "campus_json_path": "campus.json",
+  "default_start_node": "EXT_CAMPUS",
+  "animation_speed_ms": 200
+}
