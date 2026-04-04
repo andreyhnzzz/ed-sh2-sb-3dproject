@@ -11,7 +11,7 @@ MainWindow::MainWindow(CampusGraph graph, QWidget* parent)
     , complexity_analyzer_(graph_)
     , resilience_service_(graph_)
 {
-    setWindowTitle("EcoCampusNav — Sistema de Navegacion del Campus");
+    setWindowTitle("EcoCampusNav — Sistema de Navegación del Campus");
     resize(1400, 800);
     setupUi();
     setupStatusBar();

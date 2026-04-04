@@ -1,6 +1,6 @@
 # EcoCampusNav
 
-Sistema de navegacion de campus universitario implementado en C++17 con Qt6. Modela el campus como un grafo ponderado y expone algoritmos DFS, BFS, busqueda de caminos y analisis de resiliencia a traves de una interfaz grafica interactiva.
+Sistema de navegación de campus universitario implementado en C++17 con Qt6. Modela el campus como un grafo ponderado y expone algoritmos DFS, BFS, búsqueda de caminos y análisis de resiliencia a través de una interfaz gráfica interactiva.
 
 ## Arquitectura
 
@@ -108,16 +108,16 @@ Donde V = vertices (nodos), E = aristas, P = longitud del camino.
 
 ## Funcionalidades
 
-### Pestanas de la interfaz
+### Pestañas de la interfaz
 
-| Pestana       | Descripcion |
+| Pestaña       | Descripción |
 |---------------|-------------|
 | **DFS**       | Recorrido en profundidad desde nodo seleccionado, muestra orden de visita y distancias acumuladas |
 | **BFS**       | Recorrido en anchura, garantiza orden por niveles |
 | **Conectividad** | Verifica si el grafo es conexo; lista componentes conexas |
 | **Camino**    | Busca ruta entre dos nodos con DFS; resalta en el mapa |
 | **Escenarios** | Activa modo movilidad reducida (bloquea escaleras) o tipo de estudiante |
-| **Complejidad** | Mide tiempos reales de DFS y BFS, muestra complexidad teorica O(V+E) |
+| **Complejidad** | Mide tiempos reales de DFS y BFS, muestra complejidad teórica O(V+E) |
 | **Fallos**    | Simula bloqueos de aristas (construccion, emergencias) y busca rutas alternativas |
 
 ### Mapa interactivo
@@ -142,7 +142,7 @@ Donde V = vertices (nodos), E = aristas, P = longitud del camino.
 
 ### Tipos de nodo disponibles
 
-| Tipo        | Color     | Descripcion              |
+| Tipo        | Color     | Descripción              |
 |-------------|-----------|--------------------------|
 | exterior    | Gris      | Espacios al aire libre   |
 | comedor     | Naranja   | Zona de comidas          |
@@ -155,17 +155,17 @@ Donde V = vertices (nodos), E = aristas, P = longitud del camino.
 
 ## Preguntas y respuestas de ejemplo
 
-**P1: ¿Por que se usa DFS para busqueda de caminos en lugar de Dijkstra?**
+**P1: ¿Por que se usa DFS para búsqueda de caminos en lugar de Dijkstra?**
 R: El proyecto demuestra algoritmos de recorrido de grafos (DFS/BFS) como objetivo educativo. DFS encuentra *un* camino valido en O(V+E). Dijkstra encontraria el camino *optimo* pero con mayor complejidad de implementacion. Para un campus pequeno (50 nodos), la diferencia practica es minima.
 
 **P2: ¿Como maneja el sistema a un estudiante con movilidad reducida?**
-R: Las aristas con `blocked_for_mr: true` (escaleras) son excluidas del grafo efectivo cuando `mobility_reduced = true`. El sistema usa `mobility_weight` en lugar de `base_weight` y el elevador queda como unica via vertical. Esto se activa en la pestana Escenarios.
+R: Las aristas con `blocked_for_mr: true` (escaleras) son excluidas del grafo efectivo cuando `mobility_reduced = true`. El sistema usa `mobility_weight` en lugar de `base_weight` y el elevador queda como unica via vertical. Esto se activa en la pestaña Escenarios.
 
 **P3: ¿Que ocurre si el grafo no es conexo?**
-R: La pestana Conectividad ejecuta BFS desde cada nodo no visitado para identificar todas las componentes conexas. Si hay mas de una componente, ciertos destinos seran inalcanzables desde algunos origenes y `PathResult::found` retornara `false`.
+R: La pestaña Conectividad ejecuta BFS desde cada nodo no visitado para identificar todas las componentes conexas. Si hay mas de una componente, ciertos destinos seran inalcanzables desde algunos origenes y `PathResult::found` retornara `false`.
 
 **P4: ¿Como se simula un bloqueo de ruta (construccion, emergencia)?**
-R: En la pestana Fallos se selecciona una arista y se presiona "Bloquear". Esto llama a `ResilienceService::blockEdge()` que marca `currently_blocked = true` en ambas direcciones del grafo. La busqueda de ruta alternativa ignora estas aristas. "Desbloquear Todo" restablece el estado original.
+R: En la pestaña Fallos se selecciona una arista y se presiona "Bloquear". Esto llama a `ResilienceService::blockEdge()` que marca `currently_blocked = true` en ambas direcciones del grafo. La búsqueda de ruta alternativa ignora estas aristas. "Desbloquear Todo" restablece el estado original.
 
-**P5: ¿Cual es la diferencia entre base_weight y mobility_weight?**
-R: `base_weight` es la distancia/costo para un estudiante sin restricciones. `mobility_weight` puede ser mayor (rampas mas largas) o infinito efectivo (escaleras con `blocked_for_mr: true`, weight=0 indica bloqueo). Cuando el modo movilidad reducida esta activo, `Algorithms::effectiveWeight()` usa `mobility_weight`.
+**P5: ¿Cuál es la diferencia entre base_weight y mobility_weight?**
+R: `base_weight` es la distancia/costo para un estudiante sin restricciones. `mobility_weight` puede ser mayor (rampas más largas) o infinito efectivo (escaleras con `blocked_for_mr: true`, weight=0 indica bloqueo). Cuando el modo movilidad reducida está activo, `Algorithms::effectiveWeight()` usa `mobility_weight`.
