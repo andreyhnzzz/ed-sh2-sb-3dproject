@@ -56,7 +56,7 @@ EcoCampusNav/
 ├── CMakeLists.txt
 ├── CMakePresets.json
 ├── campus.json          # Datos del grafo del campus
-├── settings.json        # Configuracion de la aplicacion
+├── settings.json        # Configuración de la aplicación
 ├── src/
 │   ├── main.cpp
 │   ├── core/graph/      # Estructuras de datos y algoritmos
@@ -70,7 +70,7 @@ EcoCampusNav/
 - CMake >= 3.20
 - C++17 compatible compiler (GCC 10+, Clang 12+, MSVC 2019+)
 - Qt6 >= 6.2 (Widgets module)
-- Conexion a internet para descargar nlohmann/json (o proveer manualmente)
+- Conexión a internet para descargar nlohmann/json (o proveer manualmente)
 
 ## Compilar y ejecutar
 
@@ -156,16 +156,16 @@ Donde V = vertices (nodos), E = aristas, P = longitud del camino.
 ## Preguntas y respuestas de ejemplo
 
 **P1: ¿Por que se usa DFS para búsqueda de caminos en lugar de Dijkstra?**
-R: El proyecto demuestra algoritmos de recorrido de grafos (DFS/BFS) como objetivo educativo. DFS encuentra *un* camino valido en O(V+E). Dijkstra encontraria el camino *optimo* pero con mayor complejidad de implementacion. Para un campus pequeno (50 nodos), la diferencia practica es minima.
+R: El proyecto demuestra algoritmos de recorrido de grafos (DFS/BFS) como objetivo educativo. DFS encuentra *un* camino válido en O(V+E). Dijkstra encontraría el camino *óptimo* pero con mayor complejidad de implementación. Para un campus pequeño (50 nodos), la diferencia práctica es mínima.
 
 **P2: ¿Como maneja el sistema a un estudiante con movilidad reducida?**
-R: Las aristas con `blocked_for_mr: true` (escaleras) son excluidas del grafo efectivo cuando `mobility_reduced = true`. El sistema usa `mobility_weight` en lugar de `base_weight` y el elevador queda como unica via vertical. Esto se activa en la pestaña Escenarios.
+R: Las aristas con `blocked_for_mr: true` (escaleras) son excluidas del grafo efectivo cuando `mobility_reduced = true`. El sistema usa `mobility_weight` en lugar de `base_weight` y el elevador queda como única vía vertical. Esto se activa en la pestaña Escenarios.
 
 **P3: ¿Que ocurre si el grafo no es conexo?**
-R: La pestaña Conectividad ejecuta BFS desde cada nodo no visitado para identificar todas las componentes conexas. Si hay mas de una componente, ciertos destinos seran inalcanzables desde algunos origenes y `PathResult::found` retornara `false`.
+R: La pestaña Conectividad ejecuta BFS desde cada nodo no visitado para identificar todas las componentes conexas. Si hay más de una componente, ciertos destinos serán inalcanzables desde algunos orígenes y `PathResult::found` retornará `false`.
 
 **P4: ¿Como se simula un bloqueo de ruta (construccion, emergencia)?**
-R: En la pestaña Fallos se selecciona una arista y se presiona "Bloquear". Esto llama a `ResilienceService::blockEdge()` que marca `currently_blocked = true` en ambas direcciones del grafo. La búsqueda de ruta alternativa ignora estas aristas. "Desbloquear Todo" restablece el estado original.
+R: En la pestaña Fallos se selecciona una arista y se presiona "Bloquear". Esto llama a `ResilienceService::blockEdge()` que marca `currently_blocked = true` en ambas direcciones del grafo. La búsqueda de ruta alternativa ignora estas aristas. "Desbloquear Todo" restablece el estado original. 
 
 **P5: ¿Cuál es la diferencia entre base_weight y mobility_weight?**
 R: `base_weight` es la distancia/costo para un estudiante sin restricciones. `mobility_weight` puede ser mayor (rampas más largas) o infinito efectivo (escaleras con `blocked_for_mr: true`, weight=0 indica bloqueo). Cuando el modo movilidad reducida está activo, `Algorithms::effectiveWeight()` usa `mobility_weight`.

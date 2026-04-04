@@ -9,7 +9,7 @@ ComplexityTab::ComplexityTab(ComplexityAnalyzer& analyzer, ScenarioManager& scen
 {
     auto* layout = new QVBoxLayout(this);
 
-    layout->addWidget(new QLabel("Nodo de inicio para analisis:"));
+    layout->addWidget(new QLabel("Nodo de inicio para análisis:"));
     combo_start_ = new QComboBox(this);
     for (auto& id : graph_.nodeIds()) {
         try {
@@ -52,6 +52,6 @@ void ComplexityTab::onAnalyze() {
         table_->setItem(i, 3, new QTableWidgetItem(QString::fromStdString(stats[i].theoretical)));
     }
 
-    lbl_info_->setText(QString("Grafo: V=%1 nodos, E=%2 aristas. Analisis completado.")
+    lbl_info_->setText(QString("Grafo: V=%1 nodos, E=%2 aristas. Análisis completado.")
                            .arg(graph_.nodeCount()).arg(graph_.edgeCount()));
 }
