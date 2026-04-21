@@ -1,171 +1,124 @@
 # EcoCampusNav
 
-Sistema de navegación de campus universitario implementado en C++17 con Qt6. Modela el campus como un grafo ponderado y expone algoritmos DFS, BFS, búsqueda de caminos y análisis de resiliencia a través de una interfaz gráfica interactiva.
+EcoCampusNav es un proyecto en C++17 orientado a simulacion de navegacion en campus.
+Actualmente el proyecto esta en una etapa de juego 2D top-down con `raylib`, usando mapas
+de Tiled (`.tmj`) y sprites animados, mientras conserva la capa de logica de grafos para
+DFS, BFS, conectividad, rutas y resiliencia.
 
-## Arquitectura
+## Estado actual del proyecto
 
-```mermaid
-graph TD
-    subgraph UI["UI Layer (Qt6 Widgets)"]
-        MW[MainWindow]
-        CMV[CampusMapView]
-        DT[DfsTab]
-        BT[BfsTab]
-        CT[ConnectivityTab]
-        PT[PathfindTab]
-        ST[ScenarioTab]
-        CPT[ComplexityTab]
-        RT[ResilienceTab]
-    end
+El runtime principal esta en `src/main.cpp` y hoy incluye:
 
-    subgraph Services["Service Layer"]
-        NS[NavigationService]
-        SM[ScenarioManager]
-        CA[ComplexityAnalyzer]
-        RS[ResilienceService]
-    end
+- Render de mapa `Paradadebus.png` (escenario top-down)
+- Carga de hitboxes desde `Paradadebus.tmj` (layer `Hitboxes`)
+- Personaje con sprites `idle/walk` y animacion por direccion
+- Movimiento con `W/A/S/D`
+- Sprint con `Shift`
+- Camara `Camera2D` con seguimiento al personaje y zoom con rueda
+- HUD con coordenadas del personaje (esquina superior derecha)
+- Panel de control con operaciones del grafo (DFS, BFS, camino, conectividad, etc.)
 
-    subgraph Core["Core / Graph"]
-        CG[CampusGraph]
-        ALG[Algorithms]
-        NODE[Node]
-        EDGE[Edge]
-    end
+## Arquitectura del codigo
 
-    subgraph Repo["Repository"]
-        JGR[JsonGraphRepository]
-    end
+La estructura sigue separada por capas:
 
-    MW --> CMV
-    MW --> DT & BT & CT & PT & ST & CPT & RT
-    DT & BT & PT --> NS
-    CT --> NS
-    CPT --> CA
-    RT --> RS
-    ST --> SM
-    NS & CA & RS --> ALG
-    ALG --> CG
-    CG --> NODE & EDGE
-    JGR --> CG
+- `src/core/graph/`
+  - `CampusGraph`, `Node`, `Edge`, `Algorithms`
+- `src/repositories/`
+  - `JsonGraphRepository` (carga de `campus.json`)
+- `src/services/`
+  - `NavigationService`
+  - `ScenarioManager`
+  - `ComplexityAnalyzer`
+  - `ResilienceService`
+- `src/main.cpp`
+  - Integracion de escena, mapa, personaje, camara e interfaz
+
+## Estructura del repo
+
+```text
+ed-sb-2dproject/
+|- CMakeLists.txt
+|- CMakePresets.json
+|- campus.json
+|- settings.json
+|- assets/
+|  |- maps/
+|  |- sprites/
+|  `- tilesets/
+|- external/
+|  `- rlImGui/
+`- src/
+   |- core/
+   |- repositories/
+   |- services/
+   |- ui/        (codigo legado Qt, no es el frontend activo)
+   `- main.cpp
 ```
 
-## Estructura de directorios
-
-```
-EcoCampusNav/
-├── CMakeLists.txt
-├── CMakePresets.json
-├── campus.json          # Datos del grafo del campus
-├── settings.json        # Configuración de la aplicación
-├── src/
-│   ├── main.cpp
-│   ├── core/graph/      # Estructuras de datos y algoritmos
-│   ├── repositories/    # Carga desde JSON
-│   ├── services/        # Logica de negocio
-│   └── ui/              # Widgets Qt6
-```
-
-## Requisitos
+## Dependencias
 
 - CMake >= 3.20
-- C++17 compatible compiler (GCC 10+, Clang 12+, MSVC 2019+)
-- Qt6 >= 6.2 (Widgets module)
-- Conexión a internet para descargar nlohmann/json (o proveer manualmente)
+- Compilador C++17 (MSVC, Clang o GCC)
+- `raylib` (via `find_package(raylib CONFIG REQUIRED)`)
+- `nlohmann/json` (FetchContent)
+- `imgui` (FetchContent)
+- `external/rlImGui` (wrapper local)
 
-## Compilar y ejecutar
+## Compilar
+
+### Con presets
 
 ```bash
-# Configurar (Release)
+cmake --preset debug
+cmake --build --preset debug
+```
+
+o
+
+```bash
 cmake --preset release
+cmake --build --preset release
+```
 
-# Compilar
+### Manual
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
+```
 
-# Ejecutar (desde el directorio build)
-cd build
+## Ejecutar
+
+Desde la carpeta de build donde quede el ejecutable:
+
+```bash
 ./EcoCampusNav
 ```
 
-### Build manual sin presets
+Nota: `CMakeLists.txt` copia automaticamente `assets/` al directorio runtime del ejecutable.
 
-```bash
-cd EcoCampusNav
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-cd build && ./EcoCampusNav
-```
+## Controles actuales
 
-## Complejidad algorítmica
+- `W/A/S/D`: movimiento
+- `Shift`: sprint
+- Rueda del mouse: zoom de camara
 
-| Algoritmo       | Tiempo    | Espacio   | Estructura interna |
-|-----------------|-----------|-----------|-------------------|
-| DFS             | O(V + E)  | O(V)      | Stack (LIFO)      |
-| BFS             | O(V + E)  | O(V)      | Queue (FIFO)      |
-| Busqueda camino | O(V + E)  | O(V * P)  | DFS con path      |
-| Conectividad    | O(V + E)  | O(V)      | BFS global        |
+## Datos de mapa y colision
 
-Donde V = vertices (nodos), E = aristas, P = longitud del camino.
+- Mapa base activo: `assets/maps/Paradadebus.png`
+- Mapa Tiled activo: `assets/maps/Paradadebus.tmj`
+- Colision: objetos del layer `Hitboxes` en el `.tmj`
 
-## Funcionalidades
+## Observaciones tecnicas
 
-### Pestañas de la interfaz
+- El panel de control usa ImGui.
+- La logica de input de ImGui esta implementada en `external/rlImGui/rlImGui.cpp`.
+- Existe codigo Qt en `src/ui/`, pero actualmente no es la ruta de ejecucion principal.
 
-| Pestaña       | Descripción |
-|---------------|-------------|
-| **DFS**       | Recorrido en profundidad desde nodo seleccionado, muestra orden de visita y distancias acumuladas |
-| **BFS**       | Recorrido en anchura, garantiza orden por niveles |
-| **Conectividad** | Verifica si el grafo es conexo; lista componentes conexas |
-| **Camino**    | Busca ruta entre dos nodos con DFS; resalta en el mapa |
-| **Escenarios** | Activa modo movilidad reducida (bloquea escaleras) o tipo de estudiante |
-| **Complejidad** | Mide tiempos reales de DFS y BFS, muestra complejidad teórica O(V+E) |
-| **Fallos**    | Simula bloqueos de aristas (construccion, emergencias) y busca rutas alternativas |
+## Proximos pasos sugeridos
 
-### Mapa interactivo
-
-- **Zoom**: rueda del raton
-- **Pan**: boton central del raton + arrastrar
-- **Click en nodo**: muestra informacion en barra de estado
-- **Tooltip**: pasar el cursor sobre un nodo muestra nombre, tipo y nivel z
-
-## Formato campus.json
-
-```json
-{
-  "nodes": [
-    {"id": "ID_UNICO", "name": "Nombre legible", "type": "tipo", "x": 100, "y": 200, "z": 0}
-  ],
-  "edges": [
-    {"from": "A", "to": "B", "base_weight": 5.0, "mobility_weight": 5.0, "blocked_for_mr": false}
-  ]
-}
-```
-
-### Tipos de nodo disponibles
-
-| Tipo        | Color     | Descripción              |
-|-------------|-----------|--------------------------|
-| exterior    | Gris      | Espacios al aire libre   |
-| comedor     | Naranja   | Zona de comidas          |
-| biblioteca  | Azul      | Biblioteca universitaria |
-| aulas_n1    | Verde     | Aulas nivel 1            |
-| aulas_n2    | Verde agua| Aulas nivel 2            |
-| escalera    | Rojo      | Escaleras (no-MR)        |
-| elevador    | Purpura   | Elevadores (accesibles)  |
-| transporte  | Amarillo  | Paradas de autobus       |
-
-## Preguntas y respuestas de ejemplo
-
-**P1: ¿Por que se usa DFS para búsqueda de caminos en lugar de Dijkstra?**
-R: El proyecto demuestra algoritmos de recorrido de grafos (DFS/BFS) como objetivo educativo. DFS encuentra *un* camino válido en O(V+E). Dijkstra encontraría el camino *óptimo* pero con mayor complejidad de implementación. Para un campus pequeño (50 nodos), la diferencia práctica es mínima.
-
-**P2: ¿Como maneja el sistema a un estudiante con movilidad reducida?**
-R: Las aristas con `blocked_for_mr: true` (escaleras) son excluidas del grafo efectivo cuando `mobility_reduced = true`. El sistema usa `mobility_weight` en lugar de `base_weight` y el elevador queda como única vía vertical. Esto se activa en la pestaña Escenarios.
-
-**P3: ¿Que ocurre si el grafo no es conexo?**
-R: La pestaña Conectividad ejecuta BFS desde cada nodo no visitado para identificar todas las componentes conexas. Si hay más de una componente, ciertos destinos serán inalcanzables desde algunos orígenes y `PathResult::found` retornará `false`.
-
-**P4: ¿Como se simula un bloqueo de ruta (construccion, emergencia)?**
-R: En la pestaña Fallos se selecciona una arista y se presiona "Bloquear". Esto llama a `ResilienceService::blockEdge()` que marca `currently_blocked = true` en ambas direcciones del grafo. La búsqueda de ruta alternativa ignora estas aristas. "Desbloquear Todo" restablece el estado original. 
-
-**P5: ¿Cuál es la diferencia entre base_weight y mobility_weight?**
-R: `base_weight` es la distancia/costo para un estudiante sin restricciones. `mobility_weight` puede ser mayor (rampas más largas) o infinito efectivo (escaleras con `blocked_for_mr: true`, weight=0 indica bloqueo). Cuando el modo movilidad reducida está activo, `Algorithms::effectiveWeight()` usa `mobility_weight`.
+- Clasificar hitboxes por tipo (solidas vs decorativas)
+- Definir puntos de spawn por objetos nombrados en Tiled
+- Suavizar seguimiento de camara (lerp)
+- Unificar documentacion de la capa UI para evitar confusion con Qt legado
