@@ -3,49 +3,112 @@ project(EcoCampusNav VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
-
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 include(FetchContent)
+
+# ============================================================================
+# Raylib (vcpkg crea target 'raylib', no 'raylib::raylib')
+# ============================================================================
+find_package(raylib CONFIG REQUIRED)
+
+# Crear alias para convención moderna
+if(NOT TARGET raylib::raylib)
+  add_library(raylib::raylib ALIAS raylib)
+endif()
+
+message(STATUS "✓ Raylib found")
+
+# ============================================================================
+# nlohmann/json
+# ============================================================================
 FetchContent_Declare(
-    nlohmann_json
-    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  nlohmann_json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
+# ============================================================================
+# Dear ImGui
+# ============================================================================
+FetchContent_Declare(
+  imgui
+  URL https://github.com/ocornut/imgui/archive/refs/tags/v1.90.4.tar.gz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(imgui)
+
+set(IMGUI_DIR ${imgui_SOURCE_DIR})
+set(IMGUI_SOURCES
+  ${IMGUI_DIR}/imgui.cpp
+  ${IMGUI_DIR}/imgui_demo.cpp
+  ${IMGUI_DIR}/imgui_draw.cpp
+  ${IMGUI_DIR}/imgui_widgets.cpp
+  ${IMGUI_DIR}/imgui_tables.cpp
+)
+
+add_library(imgui STATIC ${IMGUI_SOURCES})
+target_include_directories(imgui PUBLIC ${IMGUI_DIR})
+
+# ============================================================================
+# rlImGui (local implementation)
+# ============================================================================
+set(RLIMGUI_DIR "${CMAKE_SOURCE_DIR}/external/rlImGui")
+set(RLIMGUI_CPP "${RLIMGUI_DIR}/rlImGui.cpp")
+set(RLIMGUI_H   "${RLIMGUI_DIR}/rlImGui.h")
+
+if(EXISTS ${RLIMGUI_CPP} AND EXISTS ${RLIMGUI_H})
+  message(STATUS "✓ Found rlImGui in ${RLIMGUI_DIR}")
+  add_library(rlImGui STATIC ${RLIMGUI_CPP})
+  target_include_directories(rlImGui PUBLIC ${RLIMGUI_DIR})
+  target_link_libraries(rlImGui PUBLIC imgui raylib::raylib)
+else()
+  message(FATAL_ERROR "rlImGui not found in ${RLIMGUI_DIR}")
+endif()
+
+# ============================================================================
+# Project Sources
+# ============================================================================
 set(SOURCES
-    src/main.cpp
-    src/core/graph/CampusGraph.cpp
-    src/core/graph/Algorithms.cpp
-    src/repositories/JsonGraphRepository.cpp
-    src/services/NavigationService.cpp
-    src/services/ScenarioManager.cpp
-    src/services/ComplexityAnalyzer.cpp
-    src/services/ResilienceService.cpp
-    src/ui/MainWindow.cpp
-    src/ui/CampusMapView.cpp
-    src/ui/NodeItem.cpp
-    src/ui/EdgeItem.cpp
-    src/ui/DfsTab.cpp
-    src/ui/BfsTab.cpp
-    src/ui/ConnectivityTab.cpp
-    src/ui/PathfindTab.cpp
-    src/ui/ScenarioTab.cpp
-    src/ui/ComplexityTab.cpp
-    src/ui/ResilienceTab.cpp
+  src/main.cpp
+  src/core/graph/CampusGraph.cpp
+  src/core/graph/Algorithms.cpp
+  src/repositories/JsonGraphRepository.cpp
+  src/services/NavigationService.cpp
+  src/services/ScenarioManager.cpp
+  src/services/ComplexityAnalyzer.cpp
+  src/services/ResilienceService.cpp
 )
 
 add_executable(EcoCampusNav ${SOURCES})
 
 target_include_directories(EcoCampusNav PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src
+  ${IMGUI_DIR}
 )
 
-target_link_libraries(EcoCampusNav PRIVATE Qt6::Widgets nlohmann_json::nlohmann_json)
+# ============================================================================
+# Link Libraries
+# ============================================================================
+target_link_libraries(EcoCampusNav PRIVATE
+  raylib::raylib
+  nlohmann_json::nlohmann_json
+  imgui
+  rlImGui
+)
 
+# ============================================================================
+# Copy Runtime Data
+# ============================================================================
 configure_file(${CMAKE_SOURCE_DIR}/campus.json ${CMAKE_BINARY_DIR}/campus.json COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/settings.json ${CMAKE_BINARY_DIR}/settings.json COPYONLY)
+add_custom_command(TARGET EcoCampusNav POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/assets
+          $<TARGET_FILE_DIR:EcoCampusNav>/assets
+  COMMENT "Copying assets directory to runtime folder"
+)
+
+message(STATUS "======================================")
+message(STATUS "EcoCampusNav (Raylib+ImGui) configured")
+message(STATUS "======================================")
