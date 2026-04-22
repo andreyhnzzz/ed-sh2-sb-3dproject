@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <unordered_map>
 #include <cstdio>
 #include <cmath>
 #include <nlohmann/json.hpp>
@@ -37,6 +38,22 @@ struct SpriteAnim {
     int frame{0};
     float timer{0.0f};
     int direction{0}; // 0=down, 1=left, 2=right, 3=up
+};
+
+struct SceneTrigger {
+    std::string name;
+    Rectangle zone{};
+    std::string targetScene;
+    Vector2 spawnPos{};
+    bool requiresKeyE{false};
+    char activationKey{'E'};
+};
+
+struct SceneConfig {
+    std::string name;
+    std::string pngPath;
+    std::string tmjPath;
+    std::vector<SceneTrigger> triggers;
 };
 
 static int directionStartFrame(int direction, int totalFrames) {
@@ -78,35 +95,11 @@ static std::string findCampusJson(const char* argv0) {
     });
 }
 
-static std::string findMapPng(const char* argv0) {
+static std::string resolveAssetPath(const char* argv0, const std::string& relPath) {
     return findPathCandidate(argv0, {
-        fs::path("assets/maps/Paradadebus.png"),
-        fs::path("../assets/maps/Paradadebus.png"),
-        fs::path("../../assets/maps/Paradadebus.png")
-    });
-}
-
-static std::string findMapTmj(const char* argv0) {
-    return findPathCandidate(argv0, {
-        fs::path("assets/maps/Paradadebus.tmj"),
-        fs::path("../assets/maps/Paradadebus.tmj"),
-        fs::path("../../assets/maps/Paradadebus.tmj")
-    });
-}
-
-static std::string findCafeteriaPng(const char* argv0) {
-    return findPathCandidate(argv0, {
-        fs::path("assets/maps/Exteriorcafeteria.png"),
-        fs::path("../assets/maps/Exteriorcafeteria.png"),
-        fs::path("../../assets/maps/Exteriorcafeteria.png")
-    });
-}
-
-static std::string findCafeteriaTmj(const char* argv0) {
-    return findPathCandidate(argv0, {
-        fs::path("assets/maps/Exteriorcafeteria.tmj"),
-        fs::path("../assets/maps/Exteriorcafeteria.tmj"),
-        fs::path("../../assets/maps/Exteriorcafeteria.tmj")
+        fs::path(relPath),
+        fs::path("..") / relPath,
+        fs::path("../..") / relPath
     });
 }
 
@@ -214,8 +207,6 @@ static void drawMapWithHitboxes(const MapRenderData& mapData, bool showHitboxes)
     }
 }
 
-enum SceneID { PARADA, CAFETERIA };
-
 static void clampCameraTarget(Camera2D& camera, const MapRenderData& mapData, int screenWidth, int screenHeight) {
     if (!mapData.hasTexture) return;
     const float halfViewWidth = (static_cast<float>(screenWidth) * 0.5f) / camera.zoom;
@@ -266,26 +257,76 @@ int main(int argc, char* argv[]) {
 
     rlImGuiSetup(true);
 
-    MapRenderData mapData;
-    const std::string mapPngPath = findMapPng(argc > 0 ? argv[0] : nullptr);
-    const std::string mapTmjPath = findMapTmj(argc > 0 ? argv[0] : nullptr);
-    bool showHitboxes = false;
+    // --- Scene definitions ---
+    const std::vector<SceneConfig> allScenes = {
+        {
+            "Exteriorcafeteria",
+            "assets/maps/Exteriorcafeteria.png",
+            "assets/maps/Exteriorcafeteria.tmj",
+            {
+                {"VueltaParada",        {1272.0f, 684.0f,  40.0f, 160.0f}, "Paradadebus",       {350.0f, 600.0f}, false},
+                {"EntradaPiso4",        {1113.0f, 497.0f, 130.0f,  10.0f}, "piso4",             {400.0f, 400.0f}, false},
+                {"EntradaBiblio",       { 582.0f, 389.0f,  62.0f,  10.0f}, "biblio",            {200.0f, 200.0f}, true},
+                {"AccesoPiso4_2",       { 800.0f, 430.0f,  20.0f,  20.0f}, "piso4",             {400.0f, 400.0f}, false},
+                {"EntradaInteriorCafe", { 260.0f, 392.0f,  40.0f,  10.0f}, "Interiorcafeteria", {400.0f, 500.0f}, false},
+            }
+        },
+        {
+            "Paradadebus",
+            "assets/maps/Paradadebus.png",
+            "assets/maps/Paradadebus.tmj",
+            {
+                // Bus stop exit zone at the top edge of the map
+                {"SalidaParada", {326.3f, 14.0f, 119.3f, 20.0f}, "Exteriorcafeteria", {600.0f, 600.0f}, false},
+            }
+        },
+        {"Interiorcafeteria", "assets/maps/Interiorcafeteria.png", "assets/maps/Interiorcafeteria.tmj", {}},
+        {"biblio",            "assets/maps/biblio.png",            "assets/maps/biblio.tmj",            {}},
+        {"piso1",             "assets/maps/piso 1.png",            "assets/maps/piso1colisiones.tmj",   {}},
+        {"piso2",             "assets/maps/piso2.png",             "assets/maps/piso2colisiones.tmj",   {}},
+        {"piso3",             "assets/maps/piso 3.png",            "assets/maps/piso3colisiones.tmj",   {}},
+        {"piso4",             "assets/maps/piso 4.png",            "assets/maps/piso 4.tmj",            {}},
+        {"piso5",             "assets/maps/piso 5.png",            "assets/maps/piso 5colisiones.tmj",  {}},
+    };
 
-    if (!mapPngPath.empty()) {
-        mapData.texture = LoadTexture(mapPngPath.c_str());
-        mapData.hasTexture = mapData.texture.id != 0;
-    } else {
-        std::cerr << "No se encontro assets/maps/Paradadebus.png\n";
+    std::unordered_map<std::string, SceneConfig> sceneMap;
+    for (const auto& sc : allScenes) sceneMap[sc.name] = sc;
+
+    // Validate trigger target references at startup
+    for (const auto& sc : allScenes) {
+        for (const auto& trigger : sc.triggers) {
+            if (sceneMap.find(trigger.targetScene) == sceneMap.end()) {
+                std::cerr << "Advertencia: trigger '" << trigger.name
+                          << "' en escena '" << sc.name
+                          << "' apunta a escena desconocida '" << trigger.targetScene << "'\n";
+            }
+        }
     }
 
-    if (!mapTmjPath.empty()) {
-        try {
-            mapData.hitboxes = loadHitboxesFromTmj(mapTmjPath);
-        } catch (const std::exception& ex) {
-            std::cerr << "No se pudo leer Paradadebus.tmj: " << ex.what() << "\n";
+    // Load initial scene
+    const std::string initialSceneName = "Paradadebus";
+    MapRenderData mapData;
+    bool showHitboxes = false;
+    bool showTriggers = false;
+    {
+        const auto& initConfig = sceneMap.at(initialSceneName);
+        const std::string pngPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, initConfig.pngPath);
+        const std::string tmjPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, initConfig.tmjPath);
+        if (!pngPath.empty()) {
+            mapData.texture = LoadTexture(pngPath.c_str());
+            mapData.hasTexture = mapData.texture.id != 0;
+        } else {
+            std::cerr << "No se encontro " << initConfig.pngPath << "\n";
         }
-    } else {
-        std::cerr << "No se encontro assets/maps/Paradadebus.tmj\n";
+        if (!tmjPath.empty()) {
+            try {
+                mapData.hitboxes = loadHitboxesFromTmj(tmjPath);
+            } catch (const std::exception& ex) {
+                std::cerr << "No se pudo leer " << initConfig.tmjPath << ": " << ex.what() << "\n";
+            }
+        } else {
+            std::cerr << "No se encontro " << initConfig.tmjPath << "\n";
+        }
     }
 
     SpriteAnim playerAnim;
@@ -329,12 +370,12 @@ int main(int argc, char* argv[]) {
     const float maxZoom = 4.0f;
 
     // Scene transition state
-    SceneID currentScene = PARADA;
+    std::string currentSceneName = initialSceneName;
     bool isTransitioning = false;
     float fadeAlpha = 0.0f;
     bool isFadingOut = false;  // true = black overlay is fading out (scene returning to visible)
-    // Exit trigger at the top edge of Paradadebus map (bus stop exit zone)
-    const Rectangle triggerZone{326.3f, 14.0f, 445.6f - 326.3f, 34.0f - 14.0f};
+    std::string pendingTargetScene;
+    Vector2 pendingSpawnPos{};
     const float fadeRate = 1.0f / 1.25f;  // 1.25s per half (2.5s total)
 
     std::vector<std::string> nodeIds = graph.nodeIds();
@@ -409,11 +450,23 @@ int main(int argc, char* argv[]) {
         clampCameraTarget(camera, mapData, screenWidth, screenHeight);
 
         // --- Scene transition trigger detection ---
-        if (!isTransitioning && currentScene == PARADA) {
-            if (CheckCollisionRecs(playerColliderAt(playerPos), triggerZone)) {
-                isTransitioning = true;
-                isFadingOut = false;
-                fadeAlpha = 0.0f;
+        if (!isTransitioning) {
+            const auto it = sceneMap.find(currentSceneName);
+            if (it != sceneMap.end()) {
+                const Rectangle playerCollider = playerColliderAt(playerPos);
+                for (const auto& trigger : it->second.triggers) {
+                    if (CheckCollisionRecs(playerCollider, trigger.zone)) {
+                        const bool activated = !trigger.requiresKeyE || IsKeyPressed((KeyboardKey)trigger.activationKey);
+                        if (activated) {
+                            pendingTargetScene = trigger.targetScene;
+                            pendingSpawnPos = trigger.spawnPos;
+                            isTransitioning = true;
+                            isFadingOut = false;
+                            fadeAlpha = 0.0f;
+                            break;
+                        }
+                    }
+                }
             }
         }
 
@@ -424,39 +477,34 @@ int main(int argc, char* argv[]) {
                 if (fadeAlpha >= 1.0f) {
                     fadeAlpha = 1.0f;
                     // Swap scene at peak blackness
-                    if (currentScene == PARADA) {
-                        if (mapData.hasTexture) {
-                            UnloadTexture(mapData.texture);
-                            mapData.texture = {};
-                            mapData.hasTexture = false;
-                        }
-                        mapData.hitboxes.clear();
+                    if (mapData.hasTexture) {
+                        UnloadTexture(mapData.texture);
+                        mapData.texture = {};
+                        mapData.hasTexture = false;
+                    }
+                    mapData.hitboxes.clear();
 
-                        const std::string cafPng = findCafeteriaPng(argc > 0 ? argv[0] : nullptr);
-                        const std::string cafTmj = findCafeteriaTmj(argc > 0 ? argv[0] : nullptr);
-                        if (!cafPng.empty()) {
-                            mapData.texture = LoadTexture(cafPng.c_str());
+                    const auto scIt = sceneMap.find(pendingTargetScene);
+                    if (scIt != sceneMap.end()) {
+                        const std::string pngPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, scIt->second.pngPath);
+                        const std::string tmjPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, scIt->second.tmjPath);
+                        if (!pngPath.empty()) {
+                            mapData.texture = LoadTexture(pngPath.c_str());
                             mapData.hasTexture = mapData.texture.id != 0;
                         }
-                        if (!cafTmj.empty()) {
+                        if (!tmjPath.empty()) {
                             try {
-                                mapData.hitboxes = loadHitboxesFromTmj(cafTmj);
+                                mapData.hitboxes = loadHitboxesFromTmj(tmjPath);
                             } catch (const std::exception& ex) {
-                                std::cerr << "No se pudo leer Exteriorcafeteria.tmj: " << ex.what() << "\n";
+                                std::cerr << "No se pudo leer " << scIt->second.tmjPath << ": " << ex.what() << "\n";
                             }
                         }
-
-                        // Spawn bottom-right of new map, 100px from each edge, facing left
-                        if (mapData.hasTexture) {
-                            playerPos.x = static_cast<float>(mapData.texture.width) - 100.0f;
-                            playerPos.y = static_cast<float>(mapData.texture.height) - 100.0f;
-                        }
-                        playerAnim.direction = 2; // left
-                        camera.target = playerPos;
-                        camera.zoom = 2.2f;
-                        clampCameraTarget(camera, mapData, screenWidth, screenHeight);
-                        currentScene = CAFETERIA;
+                        currentSceneName = pendingTargetScene;
                     }
+                    playerPos = pendingSpawnPos;
+                    camera.target = playerPos;
+                    camera.zoom = 2.2f;
+                    clampCameraTarget(camera, mapData, screenWidth, screenHeight);
                     isFadingOut = true;
                 }
             } else {
@@ -489,6 +537,17 @@ int main(int argc, char* argv[]) {
             drawMapWithHitboxes(mapData, showHitboxes);
         } else {
             DrawRectangle(0, 0, screenWidth, screenHeight, {22, 26, 36, 255});
+        }
+
+        // Debug: draw trigger zones as green semi-transparent rectangles
+        if (showTriggers) {
+            const auto scIt = sceneMap.find(currentSceneName);
+            if (scIt != sceneMap.end()) {
+                for (const auto& trigger : scIt->second.triggers) {
+                    DrawRectangleRec(trigger.zone, Color{0, 255, 0, 60});
+                    DrawRectangleLinesEx(trigger.zone, 1.5f, Color{0, 255, 0, 180});
+                }
+            }
         }
 
         const bool useWalk = isMoving && playerAnim.hasWalk;
@@ -538,6 +597,12 @@ int main(int argc, char* argv[]) {
 
         ImGui::SetNextWindowSize(ImVec2(360, 360), ImGuiCond_FirstUseEver);
         ImGui::Begin("Control Panel");
+
+        ImGui::Text("Escena: %s", currentSceneName.c_str());
+        ImGui::Checkbox("Hitboxes", &showHitboxes);
+        ImGui::SameLine();
+        ImGui::Checkbox("Triggers", &showTriggers);
+        ImGui::Separator();
 
         bool mobilityReduced = scenario_manager.isMobilityReduced();
         if (ImGui::Checkbox("Movilidad reducida", &mobilityReduced)) {
