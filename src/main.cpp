@@ -16,6 +16,7 @@
 #include "services/ScenarioManager.h"
 #include "services/ComplexityAnalyzer.h"
 #include "services/ResilienceService.h"
+#include "services/TransitionService.h"
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
@@ -46,20 +47,10 @@ struct SpriteAnim {
     int direction{0}; // 0=down, 1=left, 2=right, 3=up
 };
 
-struct SceneTrigger {
-    std::string name;
-    Rectangle zone{};
-    std::string targetScene;
-    Vector2 spawnPos{};
-    bool requiresKeyE{false};
-    char activationKey{'E'};
-};
-
 struct SceneConfig {
     std::string name;
     std::string pngPath;
     std::string tmjPath;
-    std::vector<SceneTrigger> triggers;
 };
 
 static int directionStartFrame(int direction, int totalFrames) {
@@ -262,36 +253,17 @@ int main(int argc, char* argv[]) {
 
     rlImGuiSetup(true);
 
-    // --- Scene definitions ---
+    // --- Scene definitions (paths only; transitions are handled by TransitionService) ---
     const std::vector<SceneConfig> allScenes = {
-        {
-            "Exteriorcafeteria",
-            "assets/maps/Exteriorcafeteria.png",
-            "assets/maps/Exteriorcafeteria.tmj",
-            {
-                {"VueltaParada",        {1272.0f, 684.0f,  40.0f, 160.0f}, "Paradadebus",       {350.0f, 600.0f}, false},
-                {"EntradaPiso4",        {1113.0f, 497.0f, 130.0f,  10.0f}, "piso4",             {400.0f, 400.0f}, false},
-                {"EntradaBiblio",       { 582.0f, 389.0f,  62.0f,  10.0f}, "biblio",            {200.0f, 200.0f}, true},
-                {"AccesoPiso4_2",       { 800.0f, 430.0f,  20.0f,  20.0f}, "piso4",             {400.0f, 400.0f}, false},
-                {"EntradaInteriorCafe", { 260.0f, 392.0f,  40.0f,  10.0f}, "Interiorcafeteria", {400.0f, 500.0f}, false},
-            }
-        },
-        {
-            "Paradadebus",
-            "assets/maps/Paradadebus.png",
-            "assets/maps/Paradadebus.tmj",
-            {
-                // Bus stop exit zone at the top edge of the map
-                {"SalidaParada", {326.3f, 14.0f, 119.3f, 20.0f}, "Exteriorcafeteria", {600.0f, 600.0f}, false},
-            }
-        },
-        {"Interiorcafeteria", "assets/maps/Interiorcafeteria.png", "assets/maps/Interiorcafeteria.tmj", {}},
-        {"biblio",            "assets/maps/biblio.png",            "assets/maps/biblio.tmj",            {}},
-        {"piso1",             "assets/maps/piso 1.png",            "assets/maps/piso1.tmj",             {}},
-        {"piso2",             "assets/maps/piso2.png",             "assets/maps/piso2.tmj",             {}},
-        {"piso3",             "assets/maps/piso 3.png",            "assets/maps/piso3.tmj",             {}},
-        {"piso4",             "assets/maps/piso 4.png",            "assets/maps/piso 4.tmj",            {}},
-        {"piso5",             "assets/maps/piso 5.png",            "assets/maps/piso 5.tmj",            {}},
+        {"Exteriorcafeteria", "assets/maps/Exteriorcafeteria.png", "assets/maps/Exteriorcafeteria.tmj"},
+        {"Paradadebus",       "assets/maps/Paradadebus.png",       "assets/maps/Paradadebus.tmj"},
+        {"Interiorcafeteria", "assets/maps/Interiorcafeteria.png", "assets/maps/Interiorcafeteria.tmj"},
+        {"biblio",            "assets/maps/biblio.png",            "assets/maps/biblio.tmj"},
+        {"piso1",             "assets/maps/piso 1.png",            "assets/maps/piso1.tmj"},
+        {"piso2",             "assets/maps/piso2.png",             "assets/maps/piso2.tmj"},
+        {"piso3",             "assets/maps/piso 3.png",            "assets/maps/piso3.tmj"},
+        {"piso4",             "assets/maps/piso 4.png",            "assets/maps/piso 4.tmj"},
+        {"piso5",             "assets/maps/piso 5.png",            "assets/maps/piso 5.tmj"},
     };
 
     std::unordered_map<std::string, SceneConfig> sceneMap;
@@ -315,14 +287,210 @@ int main(int argc, char* argv[]) {
         sceneDataMap[sc.name] = std::move(sd);
     }
 
-    // Validate trigger target references at startup
-    for (const auto& sc : allScenes) {
-        for (const auto& trigger : sc.triggers) {
-            if (sceneMap.find(trigger.targetScene) == sceneMap.end()) {
-                std::cerr << "Advertencia: trigger '" << trigger.name
-                          << "' en escena '" << sc.name
-                          << "' apunta a escena desconocida '" << trigger.targetScene << "'\n";
+    // -----------------------------------------------------------------------
+    // Portal & elevator definitions (bidirectional, spawnpoint-aware)
+    // -----------------------------------------------------------------------
+    TransitionService transitions;
+
+    // -----------------------------------------------------------------------
+    // PORTALS
+    // -----------------------------------------------------------------------
+
+    // --- Parada de bus <--> Exterior cafeteria ---
+    // ExtCafe trigger: x=[1272,1272], y=[684,842]  (right-edge strip, auto)
+    // Paradadebus trigger: x=[326.3,445.6], y≈14   (top edge, auto)
+    // Spawn in Exteriorcafeteria: 1265, 810
+    // Spawn in Paradadebus:       midpoint of top trigger (385, 35)
+    transitions.addPortal({
+        "ext_parada",
+        "Exteriorcafeteria", "Paradadebus",
+        {1272.0f, 684.0f,   1.0f, 158.0f},  // right-edge strip in Exteriorcafeteria
+        { 326.3f,   9.0f, 119.3f,  10.0f},  // top edge in Paradadebus
+        {1265.0f, 810.0f},                   // spawn in Exteriorcafeteria (arriving from bus stop)
+        { 385.0f,  35.0f},                   // spawn in Paradadebus (arriving from exterior)
+        false
+    });
+
+    // --- Exterior cafeteria <--> Piso 4 (main entrance, left half → spawn 565,515) ---
+    // The main entrance x=[1113,1243] is split: left half x=[1113,1178], right half x=[1178,1243].
+    // Left half: player was closer to the left → spawns at 565,515 inside piso4.
+    transitions.addPortal({
+        "ext_piso4_main_L",
+        "Exteriorcafeteria", "piso4",
+        {1113.0f, 493.0f,  65.0f,   8.0f},  // left half of main entrance in Exteriorcafeteria
+        { 558.0f, 510.0f,  15.0f,   8.0f},  // return trigger in piso4 near spawn 565,515
+        {1145.0f, 520.0f},                   // spawn in Exteriorcafeteria (return)
+        { 565.0f, 515.0f},                   // spawn in piso4 (left entry)
+        false
+    });
+
+    // --- Exterior cafeteria <--> Piso 4 (main entrance, right half → spawn 720,515) ---
+    // Right half: player was closer to the right → spawns at 720,515 inside piso4.
+    transitions.addPortal({
+        "ext_piso4_main_R",
+        "Exteriorcafeteria", "piso4",
+        {1178.0f, 493.0f,  65.0f,   8.0f},  // right half of main entrance in Exteriorcafeteria
+        { 713.0f, 510.0f,  15.0f,   8.0f},  // return trigger in piso4 near spawn 720,515
+        {1210.0f, 520.0f},                   // spawn in Exteriorcafeteria (return)
+        { 720.0f, 515.0f},                   // spawn in piso4 (right entry)
+        false
+    });
+
+    // --- Exterior cafeteria <--> Piso 4 (secondary access, x≈806.9, y≈439 → spawn 27,210) ---
+    transitions.addPortal({
+        "ext_piso4_sec",
+        "Exteriorcafeteria", "piso4",
+        { 803.0f, 434.0f,   8.0f,  10.0f},  // secondary access trigger in Exteriorcafeteria
+        {  20.0f, 205.0f,  15.0f,   8.0f},  // return trigger in piso4 near spawn 27,210
+        { 810.0f, 460.0f},                   // spawn in Exteriorcafeteria (return)
+        {  27.0f, 210.0f},                   // spawn in piso4 (secondary entry)
+        false
+    });
+
+    // --- Exterior cafeteria <--> Biblioteca (requires E) ---
+    // Trigger: x=[582,644.3], y=[389,395]  →  spawn in biblio: 111,535
+    transitions.addPortal({
+        "ext_biblio",
+        "Exteriorcafeteria", "biblio",
+        { 582.0f, 389.0f,  62.3f,   6.0f},  // trigger in Exteriorcafeteria
+        { 104.0f, 530.0f,  14.0f,   8.0f},  // return trigger in biblio near spawn 111,535
+        { 613.0f, 420.0f},                   // spawn in Exteriorcafeteria (return)
+        { 111.0f, 535.0f},                   // spawn in biblio
+        true                                  // requires E
+    });
+
+    // --- Exterior cafeteria <--> Interior cafeteria ---
+    // Trigger: x=[260,297], y=[392,392]  →  spawn in intcafe: 800,155
+    transitions.addPortal({
+        "ext_intcafe",
+        "Exteriorcafeteria", "Interiorcafeteria",
+        { 260.0f, 388.0f,  37.0f,   8.0f},  // trigger in Exteriorcafeteria
+        { 793.0f, 150.0f,  14.0f,   8.0f},  // return trigger in Interiorcafeteria near spawn 800,155
+        { 278.0f, 420.0f},                   // spawn in Exteriorcafeteria (return)
+        { 800.0f, 155.0f},                   // spawn in Interiorcafeteria
+        false
+    });
+
+    // -----------------------------------------------------------------------
+    // FLOOR ELEVATORS (3 access points per floor: elevator, left stair, right stair)
+    //
+    // Each access type sends the player to the matching access on the destination
+    // floor:  elevator → elevator,  left stair → left stair,  right stair → right stair.
+    //
+    // Trigger rects use the exact pixel ranges given for each floor.
+    // Spawn positions are placed at the midpoint of each access range, shifted
+    // slightly below so the player lands just inside the walkable area.
+    // -----------------------------------------------------------------------
+
+    // Spawn positions indexed as: [floor index 0-4][access type 0=elevator,1=left,2=right]
+    // Floors: piso1(0), piso2(1), piso3(2), piso4(3), piso5(4)
+    struct FloorAccess {
+        const char* scene;
+        const char* label;
+        Vector2 elevatorSpawn;   // spawn when arriving via elevator
+        Vector2 leftStairSpawn;  // spawn when arriving via left staircase
+        Vector2 rightStairSpawn; // spawn when arriving via right staircase
+        Rectangle elevatorRect;  // trigger: elevator trigger for THIS floor
+        Rectangle leftStairRect; // trigger: left staircase trigger for THIS floor
+        Rectangle rightStairRect;// trigger: right staircase trigger for THIS floor
+    };
+
+    // Trigger rects and spawn points per floor, derived from user-provided ranges:
+    //   Elevator spawn  = midpoint of "De X1,Y1 a X2,Y2" + slight y offset
+    //   Stair spawn     = midpoint of stair range + slight y offset
+    //   Trigger rect    = {X1, Y1-5, X2-X1, 10}  (thin strip just above the range)
+    const FloorAccess floorAccess[] = {
+        // piso1: elevator De 480,260 a 650,260 | left 30,190-55,190 | right 930,190-970,190
+        {
+            "piso1", "Piso 1",
+            {565.0f, 265.0f},   // elevator spawn
+            { 42.0f, 200.0f},   // left stair spawn
+            {950.0f, 200.0f},   // right stair spawn
+            {480.0f, 255.0f, 170.0f, 10.0f},  // elevator trigger
+            { 30.0f, 185.0f,  25.0f, 10.0f},  // left stair trigger
+            {930.0f, 185.0f,  40.0f, 10.0f},  // right stair trigger
+        },
+        // piso2: elevator De 480,240 a 655,240 | left 90,195-125,195 | right 910,190-940,190
+        {
+            "piso2", "Piso 2",
+            {567.0f, 245.0f},   // elevator spawn
+            {107.0f, 205.0f},   // left stair spawn
+            {925.0f, 200.0f},   // right stair spawn
+            {480.0f, 235.0f, 175.0f, 10.0f},  // elevator trigger
+            { 90.0f, 190.0f,  35.0f, 10.0f},  // left stair trigger
+            {910.0f, 185.0f,  30.0f, 10.0f},  // right stair trigger
+        },
+        // piso3: elevator De 480,240 a 655,240 | left 90,195-125,195 | right 910,190-940,190
+        {
+            "piso3", "Piso 3",
+            {567.0f, 245.0f},   // elevator spawn
+            {107.0f, 205.0f},   // left stair spawn
+            {925.0f, 200.0f},   // right stair spawn
+            {480.0f, 235.0f, 175.0f, 10.0f},  // elevator trigger
+            { 90.0f, 190.0f,  35.0f, 10.0f},  // left stair trigger
+            {910.0f, 185.0f,  30.0f, 10.0f},  // right stair trigger
+        },
+        // piso4: elevator De 530,220 a 700,230 | left 30,190-65,190 | right 910,190-950,190
+        {
+            "piso4", "Piso 4",
+            {615.0f, 240.0f},   // elevator spawn
+            { 47.0f, 200.0f},   // left stair spawn
+            {930.0f, 200.0f},   // right stair spawn
+            {530.0f, 215.0f, 170.0f, 20.0f},  // elevator trigger
+            { 30.0f, 185.0f,  35.0f, 10.0f},  // left stair trigger
+            {910.0f, 185.0f,  40.0f, 10.0f},  // right stair trigger
+        },
+        // piso5: elevator De 480,240 a 655,240 | left 95,190-130,190 | right 910,190-940,190
+        {
+            "piso5", "Piso 5",
+            {567.0f, 245.0f},   // elevator spawn
+            {112.0f, 200.0f},   // left stair spawn
+            {925.0f, 200.0f},   // right stair spawn
+            {480.0f, 235.0f, 175.0f, 10.0f},  // elevator trigger
+            { 95.0f, 185.0f,  35.0f, 10.0f},  // left stair trigger
+            {910.0f, 185.0f,  30.0f, 10.0f},  // right stair trigger
+        },
+    };
+    constexpr int kNumFloors = 5;
+
+    // For each floor, register 3 FloorElevator instances (one per access type).
+    // Each instance lists all OTHER floors with the corresponding spawn position.
+    for (int i = 0; i < kNumFloors; ++i) {
+        // --- Elevator ---
+        {
+            FloorElevator fe;
+            fe.id          = std::string("elevator_") + floorAccess[i].scene;
+            fe.scene       = floorAccess[i].scene;
+            fe.triggerRect = floorAccess[i].elevatorRect;
+            for (int j = 0; j < kNumFloors; ++j) {
+                if (j == i) continue;
+                fe.floors.push_back({floorAccess[j].scene, floorAccess[j].elevatorSpawn, floorAccess[j].label});
             }
+            transitions.addFloorElevator(fe);
+        }
+        // --- Left staircase ---
+        {
+            FloorElevator fe;
+            fe.id          = std::string("stair_left_") + floorAccess[i].scene;
+            fe.scene       = floorAccess[i].scene;
+            fe.triggerRect = floorAccess[i].leftStairRect;
+            for (int j = 0; j < kNumFloors; ++j) {
+                if (j == i) continue;
+                fe.floors.push_back({floorAccess[j].scene, floorAccess[j].leftStairSpawn, floorAccess[j].label});
+            }
+            transitions.addFloorElevator(fe);
+        }
+        // --- Right staircase ---
+        {
+            FloorElevator fe;
+            fe.id          = std::string("stair_right_") + floorAccess[i].scene;
+            fe.scene       = floorAccess[i].scene;
+            fe.triggerRect = floorAccess[i].rightStairRect;
+            for (int j = 0; j < kNumFloors; ++j) {
+                if (j == i) continue;
+                fe.floors.push_back({floorAccess[j].scene, floorAccess[j].rightStairSpawn, floorAccess[j].label});
+            }
+            transitions.addFloorElevator(fe);
         }
     }
 
@@ -386,14 +554,8 @@ int main(int argc, char* argv[]) {
     const float minZoom = 1.2f;
     const float maxZoom = 4.0f;
 
-    // Scene transition state
+    // Scene state
     std::string currentSceneName = initialSceneName;
-    bool isTransitioning = false;
-    float fadeAlpha = 0.0f;
-    bool isFadingOut = false;  // true = black overlay is fading out (scene returning to visible)
-    std::string pendingTargetScene;
-    Vector2 pendingSpawnPos{};
-    const float fadeRate = 1.0f / 1.25f;  // 1.25s per half (2.5s total)
 
     std::vector<std::string> nodeIds = graph.nodeIds();
     std::string defaultStart = nodeIds.empty() ? "" : nodeIds.front();
@@ -466,68 +628,37 @@ int main(int argc, char* argv[]) {
         camera.target = playerPos;
         clampCameraTarget(camera, mapData, screenWidth, screenHeight);
 
-        // --- Scene transition trigger detection ---
-        if (!isTransitioning) {
-            const auto it = sceneMap.find(currentSceneName);
-            if (it != sceneMap.end()) {
-                const Rectangle playerCollider = playerColliderAt(playerPos);
-                for (const auto& trigger : it->second.triggers) {
-                    if (CheckCollisionRecs(playerCollider, trigger.zone)) {
-                        const bool activated = !trigger.requiresKeyE || IsKeyPressed((KeyboardKey)trigger.activationKey);
-                        if (activated) {
-                            pendingTargetScene = trigger.targetScene;
-                            pendingSpawnPos = trigger.spawnPos;
-                            isTransitioning = true;
-                            isFadingOut = false;
-                            fadeAlpha = 0.0f;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        // --- Scene transition (portal & elevator detection + fade state machine) ---
+        transitions.update(playerColliderAt(playerPos), currentSceneName, dt);
 
-        // --- Fade update ---
-        if (isTransitioning) {
-            if (!isFadingOut) {
-                fadeAlpha += fadeRate * dt;
-                if (fadeAlpha >= 1.0f) {
-                    fadeAlpha = 1.0f;
-                    // Swap scene at peak blackness
-                    if (mapData.hasTexture) {
-                        UnloadTexture(mapData.texture);
-                        mapData.texture = {};
-                        mapData.hasTexture = false;
-                    }
-                    mapData.hitboxes.clear();
-
-                    const auto scIt = sceneMap.find(pendingTargetScene);
-                    if (scIt != sceneMap.end()) {
-                        const std::string pngPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, scIt->second.pngPath);
-                        if (!pngPath.empty()) {
-                            mapData.texture = LoadTexture(pngPath.c_str());
-                            mapData.hasTexture = mapData.texture.id != 0;
-                        }
-                        const auto sdIt = sceneDataMap.find(pendingTargetScene);
-                        if (sdIt != sceneDataMap.end() && sdIt->second.isValid) {
-                            mapData.hitboxes = sdIt->second.hitboxes;
-                        }
-                        currentSceneName = pendingTargetScene;
-                    }
-                    playerPos = pendingSpawnPos;
-                    camera.target = playerPos;
-                    camera.zoom = 2.2f;
-                    clampCameraTarget(camera, mapData, screenWidth, screenHeight);
-                    isFadingOut = true;
-                }
-            } else {
-                fadeAlpha -= fadeRate * dt;
-                if (fadeAlpha <= 0.0f) {
-                    fadeAlpha = 0.0f;
-                    isTransitioning = false;
-                    isFadingOut = false;
-                }
+        // Perform scene swap at peak blackness (alpha == 1.0)
+        if (transitions.needsSceneSwap()) {
+            const TransitionRequest req = transitions.getPendingSwap();
+            if (mapData.hasTexture) {
+                UnloadTexture(mapData.texture);
+                mapData.texture    = {};
+                mapData.hasTexture = false;
             }
+            mapData.hitboxes.clear();
+
+            const auto scIt = sceneMap.find(req.targetScene);
+            if (scIt != sceneMap.end()) {
+                const std::string pngPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, scIt->second.pngPath);
+                if (!pngPath.empty()) {
+                    mapData.texture    = LoadTexture(pngPath.c_str());
+                    mapData.hasTexture = mapData.texture.id != 0;
+                }
+                const auto sdIt = sceneDataMap.find(req.targetScene);
+                if (sdIt != sceneDataMap.end() && sdIt->second.isValid) {
+                    mapData.hitboxes = sdIt->second.hitboxes;
+                }
+                currentSceneName = req.targetScene;
+            }
+            playerPos      = req.spawnPos;
+            camera.target  = playerPos;
+            camera.zoom    = 2.2f;
+            clampCameraTarget(camera, mapData, screenWidth, screenHeight);
+            transitions.notifySwapDone();
         }
 
         const bool isMoving = (moveX != 0.0f || moveY != 0.0f);
@@ -552,13 +683,20 @@ int main(int argc, char* argv[]) {
             DrawRectangle(0, 0, screenWidth, screenHeight, {22, 26, 36, 255});
         }
 
-        // Debug: draw trigger zones as green semi-transparent rectangles
+        // Debug: draw portal trigger zones as green semi-transparent rectangles
         if (showTriggers) {
-            const auto scIt = sceneMap.find(currentSceneName);
-            if (scIt != sceneMap.end()) {
-                for (const auto& trigger : scIt->second.triggers) {
-                    DrawRectangleRec(trigger.zone, Color{0, 255, 0, 60});
-                    DrawRectangleLinesEx(trigger.zone, 1.5f, Color{0, 255, 0, 180});
+            for (const auto& portal : transitions.getPortals()) {
+                auto drawZone = [](const Rectangle& r) {
+                    DrawRectangleRec(r, Color{0, 255, 0, 60});
+                    DrawRectangleLinesEx(r, 1.5f, Color{0, 255, 0, 180});
+                };
+                if (portal.sceneA == currentSceneName) drawZone(portal.triggerA);
+                if (portal.sceneB == currentSceneName) drawZone(portal.triggerB);
+            }
+            for (const auto& elev : transitions.getElevators()) {
+                if (elev.scene == currentSceneName) {
+                    DrawRectangleRec(elev.triggerRect, Color{0, 180, 255, 60});
+                    DrawRectangleLinesEx(elev.triggerRect, 1.5f, Color{0, 180, 255, 180});
                 }
             }
         }
@@ -591,10 +729,19 @@ int main(int argc, char* argv[]) {
         }
         EndMode2D();
 
-        // --- Fade overlay ---
-        if (fadeAlpha > 0.0f) {
-            DrawRectangle(0, 0, screenWidth, screenHeight,
-                          Color{0, 0, 0, static_cast<unsigned char>(fadeAlpha * 255.0f)});
+        // --- Fade overlay (screen space) ---
+        transitions.drawFadeOverlay(screenWidth, screenHeight);
+
+        // --- "Presiona E" prompt ---
+        if (transitions.isPromptVisible()) {
+            const char* hint        = transitions.getPromptHint().c_str();
+            const int   hintFontSz  = 22;
+            const int   hintW       = MeasureText(hint, hintFontSz);
+            const int   hintX       = (screenWidth  - hintW) / 2;
+            const int   hintY       = screenHeight - 60;
+            DrawRectangle(hintX - 10, hintY - 8, hintW + 20, hintFontSz + 16,
+                          Color{0, 0, 0, 180});
+            DrawText(hint, hintX, hintY, hintFontSz, YELLOW);
         }
 
         const char* coordText = TextFormat("Pos: (%.1f, %.1f)", playerPos.x, playerPos.y);
@@ -607,6 +754,9 @@ int main(int argc, char* argv[]) {
         DrawText(coordText, coordX, coordY, coordFontSize, RAYWHITE);
 
         rlImGuiBegin();
+
+        // Floor-elevator menu (shown when player presses E near an elevator)
+        transitions.drawFloorMenu();
 
         ImGui::SetNextWindowSize(ImVec2(360, 360), ImGuiCond_FirstUseEver);
         ImGui::Begin("Control Panel");
