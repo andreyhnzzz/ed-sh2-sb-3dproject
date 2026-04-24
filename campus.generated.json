@@ -20,12 +20,12 @@
           "y": 525.0
         },
         "ext_from_piso4_main_R": {
-          "x": 1215.0,
+          "x": 1150.0,
           "y": 525.0
         },
         "ext_from_piso4_sec": {
-          "x": 815.0,
-          "y": 465.0
+          "x": 803.4000244140625,
+          "y": 432.8999938964844
         }
       },
       "tmjPath": "assets/maps/Exteriorcafeteria.tmj"
