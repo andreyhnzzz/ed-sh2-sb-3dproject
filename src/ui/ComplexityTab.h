@@ -22,7 +22,9 @@ private:
     ScenarioManager& scenario_;
     const CampusGraph& graph_;
     QComboBox* combo_start_{nullptr};
+    QComboBox* combo_dest_{nullptr};
     QPushButton* btn_analyze_{nullptr};
     QTableWidget* table_{nullptr};
     QLabel* lbl_info_{nullptr};
+    QLabel* lbl_compare_{nullptr};
 };

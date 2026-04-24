@@ -51,7 +51,7 @@ void PathfindTab::onFindPath() {
     QString to = combo_to_->currentData().toString();
     if (from.isEmpty() || to.isEmpty()) return;
 
-    auto result = nav_.findPath(from.toStdString(), to.toStdString(), scenario_.isMobilityReduced());
+    auto result = nav_.findPathDfs(from.toStdString(), to.toStdString(), scenario_.isMobilityReduced());
 
     list_path_->clear();
     if (!result.found) {

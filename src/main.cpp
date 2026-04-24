@@ -114,6 +114,65 @@ static std::string formatElapsedTime(float elapsedSeconds) {
     return TextFormat("%02d:%02d", minutes, seconds);
 }
 
+static std::vector<std::string> buildGraphOverviewLines(const CampusGraph& graph) {
+    std::vector<std::string> lines;
+    const auto ids = graph.nodeIds();
+    lines.reserve(ids.size() * 3);
+    lines.push_back(TextFormat("Nodes (%d):", static_cast<int>(ids.size())));
+    for (const auto& id : ids) {
+        lines.push_back(" - " + id);
+    }
+
+    lines.push_back("");
+    lines.push_back("Connections (distance):");
+
+    std::unordered_set<std::string> seenUndirected;
+    int edgeIndex = 1;
+    for (const auto& from : ids) {
+        for (const auto& e : graph.edgesFrom(from)) {
+            const std::string a = (e.from < e.to) ? e.from : e.to;
+            const std::string b = (e.from < e.to) ? e.to : e.from;
+            const std::string key = a + "|" + b + "|" + e.type;
+            if (!seenUndirected.insert(key).second) continue;
+
+            std::ostringstream oss;
+            oss.setf(std::ios::fixed);
+            oss.precision(2);
+            oss << edgeIndex++ << ". " << a << " <-> " << b
+                << " | base=" << e.base_weight
+                << " | mr=" << e.mobility_weight;
+            lines.push_back(oss.str());
+        }
+    }
+
+    return lines;
+}
+
+static std::vector<std::string> buildTraversalDetailLines(const TraversalResult& traversal,
+                                                          const char* title) {
+    std::vector<std::string> lines;
+    lines.reserve(traversal.visit_order.size() + 3);
+    lines.push_back(TextFormat("%s (visited=%d):", title, traversal.nodes_visited));
+    if (traversal.visit_order.empty()) {
+        lines.push_back("No traversal data.");
+        return lines;
+    }
+
+    for (size_t i = 0; i < traversal.visit_order.size(); ++i) {
+        const auto& node = traversal.visit_order[i];
+        const auto it = traversal.accumulated_dist.find(node);
+        const double acc = (it != traversal.accumulated_dist.end()) ? it->second : 0.0;
+
+        std::ostringstream oss;
+        oss.setf(std::ios::fixed);
+        oss.precision(2);
+        oss << (i + 1) << ". " << node << " | acc=" << acc;
+        lines.push_back(oss.str());
+    }
+
+    return lines;
+}
+
 static bool isLinkAllowed(const SceneLink& link, bool mobilityReduced) {
     if (!mobilityReduced) return true;
     return link.type != SceneLinkType::StairLeft &&
@@ -473,6 +532,13 @@ static void drawRaylibInfoMenu(
     float& routeRefreshCooldown,
     const std::vector<std::pair<std::string, std::string>>& routeScenes,
     const std::function<std::string(const std::string&)>& sceneDisplayName,
+    const CampusGraph& graph,
+    const TraversalResult& dfsTraversal,
+    const TraversalResult& bfsTraversal,
+    int& rubricViewMode,
+    int& graphPage,
+    int& dfsPage,
+    int& bfsPage,
     const TabManagerState& state,
     const std::string& currentSceneName,
     bool showHitboxes,
@@ -654,21 +720,73 @@ static void drawRaylibInfoMenu(
     const std::string elapsedLabel = formatElapsedTime(routeTravelElapsed);
     DrawText(TextFormat("Elapsed time: %s", elapsedLabel.c_str()),
              rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(26);
+    DrawText(TextFormat("Blocked nodes: %d", static_cast<int>(blockedNodes.size())),
+             rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
 
-    if (!blockedNodes.empty()) {
-        DrawText("Blocked nodes:", rightX + sectionPad, yRight, bodyFont, white); yRight += px(22);
-        for (const auto& node : blockedNodes) {
-            DrawText(("- " + node).c_str(), rightX + sectionPad + px(6), yRight, bodyMutedFont, muted);
-            yRight += px(20);
-            if (yRight > contentY + contentH - px(24)) break;
-        }
+    DrawText("Rubric evidence:", rightX + sectionPad, yRight, bodyFont, white);
+    yRight += px(24);
+
+    const int tabBtnW = px(96);
+    const int tabBtnH = px(30);
+    Rectangle graphTab{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
+                       static_cast<float>(tabBtnW), static_cast<float>(tabBtnH)};
+    Rectangle dfsTab{static_cast<float>(rightX + sectionPad + tabBtnW + px(8)), static_cast<float>(yRight),
+                     static_cast<float>(tabBtnW), static_cast<float>(tabBtnH)};
+    Rectangle bfsTab{static_cast<float>(rightX + sectionPad + (tabBtnW + px(8)) * 2), static_cast<float>(yRight),
+                     static_cast<float>(tabBtnW), static_cast<float>(tabBtnH)};
+
+    if (drawRayButton(graphTab, "Graph", bodyMutedFont,
+                      rubricViewMode == 0 ? btnActive : btn,
+                      rubricViewMode == 0 ? btnActive : btnHover,
+                      btnActive, white)) rubricViewMode = 0;
+    if (drawRayButton(dfsTab, "DFS", bodyMutedFont,
+                      rubricViewMode == 1 ? btnActive : btn,
+                      rubricViewMode == 1 ? btnActive : btnHover,
+                      btnActive, white)) rubricViewMode = 1;
+    if (drawRayButton(bfsTab, "BFS", bodyMutedFont,
+                      rubricViewMode == 2 ? btnActive : btn,
+                      rubricViewMode == 2 ? btnActive : btnHover,
+                      btnActive, white)) rubricViewMode = 2;
+    yRight += tabBtnH + px(10);
+
+    std::vector<std::string> activeLines;
+    int* activePage = &graphPage;
+    if (rubricViewMode == 0) {
+        activeLines = buildGraphOverviewLines(graph);
+        activePage = &graphPage;
+    } else if (rubricViewMode == 1) {
+        activeLines = buildTraversalDetailLines(dfsTraversal, "DFS order + accumulated distance");
+        activePage = &dfsPage;
+    } else {
+        activeLines = buildTraversalDetailLines(bfsTraversal, "BFS order + accumulated distance");
+        activePage = &bfsPage;
     }
 
-    if (yRight < contentY + contentH - px(50)) {
-        DrawText("campus.json validation", rightX + sectionPad, contentY + contentH - px(74), bodyFont, white);
-        DrawText(TextFormat("Nodes=%d Edges=%d", state.validation.nodeCount, state.validation.edgeCount),
-                 rightX + sectionPad, contentY + contentH - px(50), bodyMutedFont, muted);
+    const int listBottomY = contentY + contentH - px(58);
+    const int lineHeight = px(20);
+    const int linesPerPage = std::max(1, (listBottomY - yRight) / lineHeight);
+    const int totalPages = std::max(1, static_cast<int>((activeLines.size() + linesPerPage - 1) / linesPerPage));
+    *activePage = std::clamp(*activePage, 0, totalPages - 1);
+    const int startIdx = (*activePage) * linesPerPage;
+    const int endIdx = std::min(static_cast<int>(activeLines.size()), startIdx + linesPerPage);
+
+    for (int i = startIdx; i < endIdx; ++i) {
+        DrawText(activeLines[i].c_str(), rightX + sectionPad, yRight, bodyMutedFont, muted);
+        yRight += lineHeight;
     }
+
+    Rectangle prevPageBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(contentY + contentH - px(42)),
+                          static_cast<float>(px(36)), static_cast<float>(px(30))};
+    Rectangle nextPageBtn{static_cast<float>(rightX + sectionPad + px(140)), static_cast<float>(contentY + contentH - px(42)),
+                          static_cast<float>(px(36)), static_cast<float>(px(30))};
+    if (drawRayButton(prevPageBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
+        *activePage = std::max(0, *activePage - 1);
+    }
+    if (drawRayButton(nextPageBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
+        *activePage = std::min(totalPages - 1, *activePage + 1);
+    }
+    DrawText(TextFormat("Page %d/%d", *activePage + 1, totalPages),
+             rightX + sectionPad + px(48), contentY + contentH - px(36), bodyMutedFont, white);
 }
 
 int main(int argc, char* argv[]) {
@@ -1005,6 +1123,18 @@ int main(int argc, char* argv[]) {
     float routeRefreshCooldown = 0.0f;
     Vector2 routeAnchorPos = playerPos;
     bool infoMenuOpen = false;
+    TraversalResult dfsTraversalView;
+    TraversalResult bfsTraversalView;
+    int rubricViewMode = 0; // 0=Graph, 1=DFS, 2=BFS
+    int graphViewPage = 0;
+    int dfsViewPage = 0;
+    int bfsViewPage = 0;
+    float traversalRefreshCooldown = 0.0f;
+    {
+        const std::string traversalStart = canonicalSceneId(currentSceneName);
+        dfsTraversalView = nav_service.runDfs(traversalStart, scenario_manager.isMobilityReduced());
+        bfsTraversalView = nav_service.runBfs(traversalStart, scenario_manager.isMobilityReduced());
+    }
 
     while (!WindowShouldClose()) {
         const float dt = GetFrameTime();
@@ -1174,6 +1304,14 @@ int main(int argc, char* argv[]) {
                     routeProgressPct = std::max(routeProgressPct, std::clamp(overallProgress, 0.0f, 99.9f));
                 }
             }
+        }
+
+        traversalRefreshCooldown -= dt;
+        if (infoMenuOpen && traversalRefreshCooldown <= 0.0f) {
+            const std::string traversalStart = canonicalSceneId(currentSceneName);
+            dfsTraversalView = nav_service.runDfs(traversalStart, scenario_manager.isMobilityReduced());
+            bfsTraversalView = nav_service.runBfs(traversalStart, scenario_manager.isMobilityReduced());
+            traversalRefreshCooldown = 0.2f;
         }
 
         // --- Scene transition (portal & elevator detection + fade state machine) ---
@@ -1412,6 +1550,13 @@ int main(int argc, char* argv[]) {
             routeRefreshCooldown,
             routeScenes,
             sceneDisplayName,
+            graph,
+            dfsTraversalView,
+            bfsTraversalView,
+            rubricViewMode,
+            graphViewPage,
+            dfsViewPage,
+            bfsViewPage,
             tabState,
             currentSceneName,
             showHitboxes,

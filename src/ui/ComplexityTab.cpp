@@ -9,15 +9,24 @@ ComplexityTab::ComplexityTab(ComplexityAnalyzer& analyzer, ScenarioManager& scen
 {
     auto* layout = new QVBoxLayout(this);
 
-    layout->addWidget(new QLabel("Nodo de inicio para análisis:"));
+    auto* grid = new QGridLayout();
+    grid->addWidget(new QLabel("Nodo de inicio para análisis:"), 0, 0);
     combo_start_ = new QComboBox(this);
+    grid->addWidget(combo_start_, 0, 1);
+
+    grid->addWidget(new QLabel("Nodo destino:"), 1, 0);
+    combo_dest_ = new QComboBox(this);
+    grid->addWidget(combo_dest_, 1, 1);
+
     for (auto& id : graph_.nodeIds()) {
         try {
-            combo_start_->addItem(QString::fromStdString(id + " — " + graph_.getNode(id).name),
-                                   QString::fromStdString(id));
+            const auto item = QString::fromStdString(id + " — " + graph_.getNode(id).name);
+            const auto data = QString::fromStdString(id);
+            combo_start_->addItem(item, data);
+            combo_dest_->addItem(item, data);
         } catch (...) {}
     }
-    layout->addWidget(combo_start_);
+    layout->addLayout(grid);
 
     btn_analyze_ = new QPushButton("Analizar Complejidad", this);
     layout->addWidget(btn_analyze_);
@@ -32,6 +41,10 @@ ComplexityTab::ComplexityTab(ComplexityAnalyzer& analyzer, ScenarioManager& scen
     lbl_info_->setWordWrap(true);
     layout->addWidget(lbl_info_);
 
+    lbl_compare_ = new QLabel(this);
+    lbl_compare_->setWordWrap(true);
+    layout->addWidget(lbl_compare_);
+
     layout->addWidget(new QLabel(
         "Nota: Ambos algoritmos tienen complejidad O(V+E). DFS usa pila, BFS usa cola."));
 
@@ -40,7 +53,8 @@ ComplexityTab::ComplexityTab(ComplexityAnalyzer& analyzer, ScenarioManager& scen
 
 void ComplexityTab::onAnalyze() {
     QString startId = combo_start_->currentData().toString();
-    if (startId.isEmpty()) return;
+    QString destId = combo_dest_->currentData().toString();
+    if (startId.isEmpty() || destId.isEmpty()) return;
 
     auto stats = analyzer_.analyze(startId.toStdString(), scenario_.isMobilityReduced());
 
@@ -54,4 +68,30 @@ void ComplexityTab::onAnalyze() {
 
     lbl_info_->setText(QString("Grafo: V=%1 nodos, E=%2 aristas. Análisis completado.")
                            .arg(graph_.nodeCount()).arg(graph_.edgeCount()));
+
+    auto cmp = analyzer_.compareAlgorithms(startId.toStdString(), destId.toStdString(),
+                                           scenario_.isMobilityReduced());
+    QString visitedSummary;
+    if (!cmp.dfs_reaches_destination && !cmp.bfs_reaches_destination) {
+        visitedSummary = "Ninguno de los algoritmos alcanzó el destino.";
+    } else if (cmp.bfs_nodes_visited > cmp.dfs_nodes_visited) {
+        visitedSummary = "BFS visitó más nodos antes de llegar al destino.";
+    } else if (cmp.bfs_nodes_visited < cmp.dfs_nodes_visited) {
+        visitedSummary = "DFS visitó más nodos antes de llegar al destino.";
+    } else {
+        visitedSummary = "BFS y DFS visitaron la misma cantidad de nodos antes de llegar al destino.";
+    }
+
+    lbl_compare_->setText(QString(
+        "Comparación BFS vs DFS\n"
+        "DFS -> destino: %1 | nodos: %2 | tiempo: %3 us\n"
+        "BFS -> destino: %4 | nodos: %5 | tiempo: %6 us\n"
+        "%7")
+        .arg(cmp.dfs_reaches_destination ? "sí" : "no")
+        .arg(cmp.dfs_nodes_visited)
+        .arg(cmp.dfs_elapsed_us)
+        .arg(cmp.bfs_reaches_destination ? "sí" : "no")
+        .arg(cmp.bfs_nodes_visited)
+        .arg(cmp.bfs_elapsed_us)
+        .arg(visitedSummary));
 }
