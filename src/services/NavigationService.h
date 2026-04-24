@@ -10,6 +10,7 @@ public:
 
     TraversalResult runDfs(const std::string& start, bool mobilityReduced) const;
     TraversalResult runBfs(const std::string& start, bool mobilityReduced) const;
+    PathResult findPathDfs(const std::string& from, const std::string& to, bool mobilityReduced) const;
     PathResult findPath(const std::string& from, const std::string& to, bool mobilityReduced) const;
     bool checkConnectivity() const;
     std::vector<std::vector<std::string>> getComponents() const;

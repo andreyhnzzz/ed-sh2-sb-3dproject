@@ -1,5 +1,6 @@
 #include "CampusGraph.h"
 #include <stdexcept>
+#include <algorithm>
 
 void CampusGraph::addNode(const Node& n) {
     nodes_[n.id] = n;
@@ -36,6 +37,7 @@ std::vector<std::string> CampusGraph::nodeIds() const {
     std::vector<std::string> ids;
     ids.reserve(nodes_.size());
     for (auto& [k, v] : nodes_) ids.push_back(k);
+    std::sort(ids.begin(), ids.end());
     return ids;
 }
 
@@ -49,6 +51,14 @@ void CampusGraph::setEdgeBlocked(const std::string& from, const std::string& to,
     }
     for (auto& e : adj_[to]) {
         if (e.to == from) e.currently_blocked = blocked;
+    }
+}
+
+void CampusGraph::setNodeBlocked(const std::string& id, bool blocked) {
+    const auto it = adj_.find(id);
+    if (it == adj_.end()) return;
+    for (const auto& e : it->second) {
+        setEdgeBlocked(id, e.to, blocked);
     }
 }
 

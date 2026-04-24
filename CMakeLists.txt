@@ -97,6 +97,7 @@ set(SOURCES
         src/services/ResilienceService.cpp
         src/services/TransitionService.cpp
         src/services/TmjLoader.cpp
+        src/ui/TabManager.cpp
 )
 
 add_executable(EcoCampusNav ${SOURCES})
@@ -125,6 +126,7 @@ add_custom_command(TARGET EcoCampusNav POST_BUILD
         $<TARGET_FILE_DIR:EcoCampusNav>/assets
         COMMENT "Copying assets directory to runtime folder"
 )
+
 
 message(STATUS "======================================")
 message(STATUS "EcoCampusNav (Raylib+ImGui) configured")

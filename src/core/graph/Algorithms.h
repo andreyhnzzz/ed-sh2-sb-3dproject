@@ -26,6 +26,9 @@ public:
                                 bool mobility_reduced, bool ignore_currently_blocked = false);
     static bool isConnected(const CampusGraph& g);
     static std::vector<std::vector<std::string>> findComponents(const CampusGraph& g);
+    static PathResult findPathDfs(const CampusGraph& g, const std::string& from,
+                                   const std::string& to, bool mobility_reduced,
+                                   bool ignore_currently_blocked = false);
     static PathResult findPath(const CampusGraph& g, const std::string& from,
                                 const std::string& to, bool mobility_reduced,
                                 bool ignore_currently_blocked = false);

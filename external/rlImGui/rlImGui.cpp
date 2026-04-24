@@ -2,36 +2,27 @@
 
 #include "imgui.h"
 #include <raylib.h>
+#include <rlgl.h>
+#include <cstdio>
+#include <cstdint>
 
 namespace {
 static bool g_ready = false;
-static bool g_warned = false;
+static Texture2D g_fontTexture{};
 
-static void applyInput() {
+static void updateInput() {
     ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight()));
+    const float dt = GetFrameTime();
+    io.DeltaTime = dt > 0.0f ? dt : (1.0f / 60.0f);
 
-    io.DisplaySize = ImVec2((float)GetScreenWidth(), (float)GetScreenHeight());
-    float dt = GetFrameTime();
-    io.DeltaTime = (dt > 0.0f) ? dt : (1.0f / 60.0f);
-
-#if defined(IMGUI_VERSION_NUM) && (IMGUI_VERSION_NUM >= 18700)
-    Vector2 mp = GetMousePosition();
+    const Vector2 mp = GetMousePosition();
     io.AddMousePosEvent(mp.x, mp.y);
     io.AddMouseButtonEvent(0, IsMouseButtonDown(MOUSE_BUTTON_LEFT));
     io.AddMouseButtonEvent(1, IsMouseButtonDown(MOUSE_BUTTON_RIGHT));
     io.AddMouseButtonEvent(2, IsMouseButtonDown(MOUSE_BUTTON_MIDDLE));
     io.AddMouseWheelEvent(0.0f, GetMouseWheelMove());
-#else
-    Vector2 mp = GetMousePosition();
-    io.MousePos = ImVec2(mp.x, mp.y);
-    io.MouseDown[0] = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-    io.MouseDown[1] = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
-    io.MouseDown[2] = IsMouseButtonDown(MOUSE_BUTTON_MIDDLE);
-    io.MouseWheel = GetMouseWheelMove();
-#endif
 
-    // Basic keyboard input (limited, but enough for demo UI)
-#if defined(IMGUI_VERSION_NUM) && (IMGUI_VERSION_NUM >= 18700)
     io.AddKeyEvent(ImGuiKey_Tab, IsKeyDown(KEY_TAB));
     io.AddKeyEvent(ImGuiKey_LeftArrow, IsKeyDown(KEY_LEFT));
     io.AddKeyEvent(ImGuiKey_RightArrow, IsKeyDown(KEY_RIGHT));
@@ -53,41 +44,117 @@ static void applyInput() {
     io.AddKeyEvent(ImGuiKey_X, IsKeyDown(KEY_X));
     io.AddKeyEvent(ImGuiKey_Y, IsKeyDown(KEY_Y));
     io.AddKeyEvent(ImGuiKey_Z, IsKeyDown(KEY_Z));
-
     io.AddKeyEvent(ImGuiKey_ModCtrl, IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL));
     io.AddKeyEvent(ImGuiKey_ModShift, IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT));
     io.AddKeyEvent(ImGuiKey_ModAlt, IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT));
     io.AddKeyEvent(ImGuiKey_ModSuper, IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER));
-#else
-    io.KeyCtrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
-    io.KeyShift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-    io.KeyAlt = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
-    io.KeySuper = IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
 
-    io.KeysDown[KEY_TAB] = IsKeyDown(KEY_TAB);
-    io.KeysDown[KEY_LEFT] = IsKeyDown(KEY_LEFT);
-    io.KeysDown[KEY_RIGHT] = IsKeyDown(KEY_RIGHT);
-    io.KeysDown[KEY_UP] = IsKeyDown(KEY_UP);
-    io.KeysDown[KEY_DOWN] = IsKeyDown(KEY_DOWN);
-    io.KeysDown[KEY_PAGE_UP] = IsKeyDown(KEY_PAGE_UP);
-    io.KeysDown[KEY_PAGE_DOWN] = IsKeyDown(KEY_PAGE_DOWN);
-    io.KeysDown[KEY_HOME] = IsKeyDown(KEY_HOME);
-    io.KeysDown[KEY_END] = IsKeyDown(KEY_END);
-    io.KeysDown[KEY_INSERT] = IsKeyDown(KEY_INSERT);
-    io.KeysDown[KEY_DELETE] = IsKeyDown(KEY_DELETE);
-    io.KeysDown[KEY_BACKSPACE] = IsKeyDown(KEY_BACKSPACE);
-    io.KeysDown[KEY_SPACE] = IsKeyDown(KEY_SPACE);
-    io.KeysDown[KEY_ENTER] = IsKeyDown(KEY_ENTER);
-    io.KeysDown[KEY_ESCAPE] = IsKeyDown(KEY_ESCAPE);
-#endif
-
-    // Text input
     int c = 0;
     while ((c = GetCharPressed()) != 0) {
         if (c > 0 && c < 0x10000) {
-            io.AddInputCharacter((unsigned int)c);
+            io.AddInputCharacter(static_cast<unsigned int>(c));
         }
     }
+}
+
+static void createFontsTexture() {
+    ImGuiIO& io = ImGui::GetIO();
+    unsigned char* pixels = nullptr;
+    int width = 0;
+    int height = 0;
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    Image fontImage{};
+    fontImage.data = pixels;
+    fontImage.width = width;
+    fontImage.height = height;
+    fontImage.mipmaps = 1;
+    fontImage.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    g_fontTexture = LoadTextureFromImage(fontImage);
+    SetTextureFilter(g_fontTexture, TEXTURE_FILTER_POINT);
+    io.Fonts->SetTexID(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(g_fontTexture.id)));
+}
+
+static void renderDrawData(ImDrawData* drawData) {
+    if (!drawData) return;
+
+    const int fbWidth = static_cast<int>(drawData->DisplaySize.x * drawData->FramebufferScale.x);
+    const int fbHeight = static_cast<int>(drawData->DisplaySize.y * drawData->FramebufferScale.y);
+    if (fbWidth <= 0 || fbHeight <= 0) return;
+
+    const ImVec2 clipOff = drawData->DisplayPos;
+    const ImVec2 clipScale = drawData->FramebufferScale;
+
+    rlDrawRenderBatchActive();
+    rlDisableBackfaceCulling();
+    rlDisableDepthTest();
+
+    rlMatrixMode(RL_PROJECTION);
+    rlPushMatrix();
+    rlLoadIdentity();
+    rlOrtho(0.0f, drawData->DisplaySize.x, drawData->DisplaySize.y, 0.0f, -1.0f, 1.0f);
+    rlMatrixMode(RL_MODELVIEW);
+    rlPushMatrix();
+    rlLoadIdentity();
+
+    rlSetBlendMode(BLEND_ALPHA);
+
+    for (int n = 0; n < drawData->CmdListsCount; n++) {
+        const ImDrawList* cmdList = drawData->CmdLists[n];
+
+        for (int cmdI = 0; cmdI < cmdList->CmdBuffer.Size; cmdI++) {
+            const ImDrawCmd* pcmd = &cmdList->CmdBuffer[cmdI];
+            if (pcmd->UserCallback != nullptr) {
+                pcmd->UserCallback(cmdList, pcmd);
+                continue;
+            }
+
+            const ImVec2 clipMin(
+                (pcmd->ClipRect.x - clipOff.x) * clipScale.x,
+                (pcmd->ClipRect.y - clipOff.y) * clipScale.y
+            );
+            const ImVec2 clipMax(
+                (pcmd->ClipRect.z - clipOff.x) * clipScale.x,
+                (pcmd->ClipRect.w - clipOff.y) * clipScale.y
+            );
+            if (clipMax.x <= clipMin.x || clipMax.y <= clipMin.y) continue;
+
+            const int scissorX = static_cast<int>(clipMin.x);
+            const int scissorY = static_cast<int>(clipMin.y);
+            const int scissorW = static_cast<int>(clipMax.x - clipMin.x);
+            const int scissorH = static_cast<int>(clipMax.y - clipMin.y);
+            BeginScissorMode(scissorX, scissorY, scissorW, scissorH);
+
+            const auto textureId = static_cast<unsigned int>(reinterpret_cast<intptr_t>(pcmd->GetTexID()));
+            rlSetTexture(textureId);
+            rlBegin(RL_TRIANGLES);
+
+            const ImDrawVert* vtxBuffer = cmdList->VtxBuffer.Data + pcmd->VtxOffset;
+            const ImDrawIdx* idxBuffer = cmdList->IdxBuffer.Data + pcmd->IdxOffset;
+            for (unsigned int i = 0; i < pcmd->ElemCount; i++) {
+                const ImDrawVert& v = vtxBuffer[idxBuffer[i]];
+                const ImU32 col = v.col;
+                const unsigned char r = static_cast<unsigned char>((col >> IM_COL32_R_SHIFT) & 0xFF);
+                const unsigned char g = static_cast<unsigned char>((col >> IM_COL32_G_SHIFT) & 0xFF);
+                const unsigned char b = static_cast<unsigned char>((col >> IM_COL32_B_SHIFT) & 0xFF);
+                const unsigned char a = static_cast<unsigned char>((col >> IM_COL32_A_SHIFT) & 0xFF);
+                rlColor4ub(r, g, b, a);
+                rlTexCoord2f(v.uv.x, v.uv.y);
+                rlVertex2f(v.pos.x, v.pos.y);
+            }
+
+            rlEnd();
+            rlSetTexture(0);
+            EndScissorMode();
+        }
+    }
+
+    rlMatrixMode(RL_MODELVIEW);
+    rlPopMatrix();
+    rlMatrixMode(RL_PROJECTION);
+    rlPopMatrix();
+    rlMatrixMode(RL_MODELVIEW);
+    rlLoadIdentity();
+    rlSetTexture(0);
 }
 } // namespace
 
@@ -98,37 +165,54 @@ void rlImGuiSetup(bool darkTheme) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.BackendRendererName = "rlImGui-raylib";
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 
-    if (darkTheme) {
-        ImGui::StyleColorsDark();
+    ImFontConfig fontCfg{};
+    fontCfg.OversampleH = 1;
+    fontCfg.OversampleV = 1;
+    fontCfg.PixelSnapH = true;
+    fontCfg.SizePixels = 16.0f;
+    io.Fonts->Clear();
+    const char* fontPath = "assets/fonts/04B_21__.TTF";
+    if (FileExists(fontPath)) {
+        const ImWchar* ranges = io.Fonts->GetGlyphRangesDefault();
+        if (!io.Fonts->AddFontFromFileTTF(fontPath, fontCfg.SizePixels, &fontCfg, ranges)) {
+            io.Fonts->AddFontDefault(&fontCfg);
+        }
     } else {
-        ImGui::StyleColorsLight();
+        io.Fonts->AddFontDefault(&fontCfg);
     }
 
+
+    if (darkTheme) ImGui::StyleColorsDark();
+    else ImGui::StyleColorsLight();
+
     io.Fonts->Build();
+    createFontsTexture();
     g_ready = true;
 }
 
 void rlImGuiBegin(void) {
     if (!g_ready) return;
-
-    applyInput();
+    updateInput();
     ImGui::NewFrame();
 }
 
 void rlImGuiEnd(void) {
     if (!g_ready) return;
-
     ImGui::Render();
-
-    if (!g_warned) {
-        TraceLog(LOG_WARNING, "rlImGui minimal shim: rendering is a no-op. UI will not be visible yet.");
-        g_warned = true;
-    }
+    renderDrawData(ImGui::GetDrawData());
 }
 
 void rlImGuiShutdown(void) {
     if (!g_ready) return;
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->SetTexID(nullptr);
+    if (g_fontTexture.id != 0) {
+        UnloadTexture(g_fontTexture);
+        g_fontTexture = {};
+    }
     ImGui::DestroyContext();
     g_ready = false;
 }

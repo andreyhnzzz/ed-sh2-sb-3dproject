@@ -3,6 +3,10 @@
 #include <queue>
 #include <unordered_set>
 #include <chrono>
+#include <limits>
+#include <functional>
+#include <algorithm>
+#include <cmath>
 
 bool Algorithms::isAllowed(const Edge& e, bool mobility_reduced, bool ignore_currently_blocked) {
     if (!ignore_currently_blocked && e.currently_blocked) return false;
@@ -100,9 +104,9 @@ std::vector<std::vector<std::string>> Algorithms::findComponents(const CampusGra
     return components;
 }
 
-PathResult Algorithms::findPath(const CampusGraph& g, const std::string& from,
-                                  const std::string& to, bool mobility_reduced,
-                                  bool ignore_currently_blocked) {
+PathResult Algorithms::findPathDfs(const CampusGraph& g, const std::string& from,
+                                   const std::string& to, bool mobility_reduced,
+                                   bool ignore_currently_blocked) {
     PathResult result;
     if (!g.hasNode(from) || !g.hasNode(to)) return result;
 
@@ -111,13 +115,15 @@ PathResult Algorithms::findPath(const CampusGraph& g, const std::string& from,
     std::unordered_set<std::string> visited;
 
     while (!st.empty()) {
-        auto [curr, path] = st.top(); st.pop();
+        auto [curr, path] = st.top();
+        st.pop();
+
         if (curr == to) {
             result.path = path;
             result.found = true;
             double total = 0.0;
             for (size_t i = 0; i + 1 < path.size(); ++i) {
-                for (auto& e : g.edgesFrom(path[i])) {
+                for (const auto& e : g.edgesFrom(path[i])) {
                     if (e.to == path[i + 1]) {
                         total += effectiveWeight(e, mobility_reduced);
                         break;
@@ -127,16 +133,73 @@ PathResult Algorithms::findPath(const CampusGraph& g, const std::string& from,
             result.total_weight = total;
             return result;
         }
+
         if (visited.count(curr)) continue;
         visited.insert(curr);
 
-        for (auto& edge : g.edgesFrom(curr)) {
+        for (const auto& edge : g.edgesFrom(curr)) {
             if (!visited.count(edge.to) && isAllowed(edge, mobility_reduced, ignore_currently_blocked)) {
                 auto newPath = path;
                 newPath.push_back(edge.to);
-                st.push({edge.to, newPath});
+                st.push({edge.to, std::move(newPath)});
             }
         }
     }
+    return result;
+}
+
+PathResult Algorithms::findPath(const CampusGraph& g, const std::string& from,
+                                  const std::string& to, bool mobility_reduced,
+                                  bool ignore_currently_blocked) {
+    PathResult result;
+    if (!g.hasNode(from) || !g.hasNode(to)) return result;
+
+    using QueueEntry = std::pair<double, std::string>; // (distance, node)
+    std::priority_queue<QueueEntry, std::vector<QueueEntry>, std::greater<QueueEntry>> pending;
+    std::unordered_map<std::string, double> dist;
+    std::unordered_map<std::string, std::string> prev;
+    std::unordered_set<std::string> settled;
+
+    for (const auto& id : g.nodeIds()) {
+        dist[id] = std::numeric_limits<double>::infinity();
+    }
+    dist[from] = 0.0;
+    pending.push({0.0, from});
+
+    while (!pending.empty()) {
+        const auto [currDist, curr] = pending.top();
+        pending.pop();
+        if (settled.count(curr)) continue;
+        settled.insert(curr);
+
+        if (curr == to) break;
+
+        for (const auto& edge : g.edgesFrom(curr)) {
+            if (!isAllowed(edge, mobility_reduced, ignore_currently_blocked)) continue;
+            const double candidate = currDist + effectiveWeight(edge, mobility_reduced);
+            if (candidate < dist[edge.to]) {
+                dist[edge.to] = candidate;
+                prev[edge.to] = curr;
+                pending.push({candidate, edge.to});
+            }
+        }
+    }
+
+    if (!std::isfinite(dist[to])) return result;
+
+    std::vector<std::string> path;
+    std::string curr = to;
+    path.push_back(curr);
+    while (curr != from) {
+        const auto it = prev.find(curr);
+        if (it == prev.end()) return result;
+        curr = it->second;
+        path.push_back(curr);
+    }
+    std::reverse(path.begin(), path.end());
+
+    result.path = std::move(path);
+    result.total_weight = dist[to];
+    result.found = true;
     return result;
 }

@@ -1,8 +1,7 @@
 #pragma once
 
-// Minimal rlImGui shim for Raylib + Dear ImGui.
-// This provides the API used by src/main.cpp without pulling a full renderer.
-// Rendering is a no-op; UI logic still runs and the app compiles.
+// rlImGui bridge for Raylib + Dear ImGui.
+// Provides setup/frame/shutdown helpers used by src/main.cpp.
 
 #include <stdbool.h>
 

@@ -1,4 +1,7 @@
 #pragma once
+#include "../core/graph/CampusGraph.h"
+#include <string>
+#include <vector>
 
 enum class StudentType { NEW_STUDENT, REGULAR_STUDENT };
 
@@ -8,6 +11,9 @@ public:
 
     void setMobilityReduced(bool mr);
     void setStudentType(StudentType st);
+    std::vector<std::string> applyProfile(const CampusGraph& graph,
+                                          const std::string& origin,
+                                          const std::string& destination) const;
 
     bool isMobilityReduced() const { return mobility_reduced_; }
     StudentType getStudentType() const { return student_type_; }

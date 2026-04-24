@@ -10,6 +10,10 @@ TraversalResult NavigationService::runBfs(const std::string& start, bool mobilit
     return Algorithms::bfs(graph_, start, mobilityReduced);
 }
 
+PathResult NavigationService::findPathDfs(const std::string& from, const std::string& to, bool mobilityReduced) const {
+    return Algorithms::findPathDfs(graph_, from, to, mobilityReduced);
+}
+
 PathResult NavigationService::findPath(const std::string& from, const std::string& to, bool mobilityReduced) const {
     return Algorithms::findPath(graph_, from, to, mobilityReduced);
 }

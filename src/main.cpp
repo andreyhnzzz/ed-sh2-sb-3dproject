@@ -22,6 +22,7 @@
 #include "services/ResilienceService.h"
 #include "services/TransitionService.h"
 #include "services/TmjLoader.h"
+#include "ui/TabManager.h"
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
@@ -739,22 +740,7 @@ int main(int argc, char* argv[]) {
     // Scene state
     std::string currentSceneName = initialSceneName;
 
-    std::vector<std::string> nodeIds = graph.nodeIds();
-    std::string defaultStart = nodeIds.empty() ? "" : nodeIds.front();
-    std::string defaultEnd = nodeIds.size() > 1 ? nodeIds[1] : defaultStart;
-
-    char startId[64] = {0};
-    char endId[64] = {0};
-    std::snprintf(startId, sizeof(startId), "%s", defaultStart.c_str());
-    std::snprintf(endId, sizeof(endId), "%s", defaultEnd.c_str());
-
-    TraversalResult lastTraversal;
-    PathResult lastPath;
-    bool hasTraversal = false;
-    bool hasPath = false;
-    bool lastConnected = false;
-    std::vector<AlgorithmStats> lastStats;
-    std::string lastAction;
+    TabManagerState tabState = createTabManagerState(graph, path);
     int selectedRouteSceneIdx = 0;
     bool routeActive = false;
     std::string routeTargetScene;
@@ -1010,6 +996,11 @@ int main(int argc, char* argv[]) {
                     static_cast<float>(mapY) + ((p.y - srcRect.y) / srcRect.height) * kMapH
                 };
             };
+            auto clampMiniPoint = [&](Vector2 p) {
+                p.x = std::clamp(p.x, static_cast<float>(mapX), static_cast<float>(mapX + kMapW));
+                p.y = std::clamp(p.y, static_cast<float>(mapY), static_cast<float>(mapY + kMapH));
+                return p;
+            };
 
             // Draw minimap background
             DrawRectangle(mapX - 2, mapY - 2, kMapW + 4, kMapH + 4, Color{0,0,0,200});
@@ -1037,16 +1028,16 @@ int main(int argc, char* argv[]) {
 
             if (routeActive && routePathScene == currentSceneName && routePathPoints.size() >= 2) {
                 for (size_t i = 1; i < routePathPoints.size(); ++i) {
-                    const Vector2 a = worldToMini(routePathPoints[i - 1]);
-                    const Vector2 b = worldToMini(routePathPoints[i]);
+                    const Vector2 a = clampMiniPoint(worldToMini(routePathPoints[i - 1]));
+                    const Vector2 b = clampMiniPoint(worldToMini(routePathPoints[i]));
                     DrawLineEx(a, b, 3.0f, Color{255, 210, 60, 240});
                 }
-                const Vector2 goalMarker = worldToMini(routePathPoints.back());
+                const Vector2 goalMarker = clampMiniPoint(worldToMini(routePathPoints.back()));
                 DrawCircleV(goalMarker, 5.0f, Color{255, 180, 60, 240});
                 DrawCircleLines(static_cast<int>(goalMarker.x), static_cast<int>(goalMarker.y), 5.0f, BLACK);
             }
 
-            const Vector2 playerMini = worldToMini(playerPos);
+            const Vector2 playerMini = clampMiniPoint(worldToMini(playerPos));
             const float dotX = playerMini.x;
             const float dotY = playerMini.y;
             DrawCircle(static_cast<int>(dotX), static_cast<int>(dotY), 4.0f, Color{0,220,255,255});
@@ -1090,137 +1081,13 @@ int main(int argc, char* argv[]) {
         // Floor-elevator menu (shown when player presses E near an elevator)
         transitions.drawFloorMenu();
 
-        ImGui::SetNextWindowPos(ImVec2(static_cast<float>(screenWidth - 286),
-                                       static_cast<float>(screenHeight - 334)),
-                                ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(270, 150), ImGuiCond_Always);
-        ImGui::Begin("Ruta minimapa", nullptr,
-                     ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoCollapse);
-
-        const char* selectedRouteLabel = routeScenes[selectedRouteSceneIdx].second.c_str();
-        if (ImGui::BeginCombo("Destino", selectedRouteLabel)) {
-            for (int i = 0; i < static_cast<int>(routeScenes.size()); ++i) {
-                const bool isSelected = (selectedRouteSceneIdx == i);
-                if (ImGui::Selectable(routeScenes[i].second.c_str(), isSelected)) {
-                    selectedRouteSceneIdx = i;
-                }
-                if (isSelected) ImGui::SetItemDefaultFocus();
-            }
-            ImGui::EndCombo();
-        }
-
-        if (ImGui::Button("Trazar ruta", ImVec2(122, 0))) {
-            routeActive = true;
-            routeTargetScene = routeScenes[selectedRouteSceneIdx].first;
-            routeRefreshCooldown = 0.0f;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Limpiar", ImVec2(122, 0))) {
-            routeActive = false;
-            routeTargetScene.clear();
-            routeScenePlan.clear();
-            routePathPoints.clear();
-            routeNextHint.clear();
-        }
-
-        if (routeActive) {
-            ImGui::Separator();
-            ImGui::TextWrapped("Destino: %s", sceneDisplayName(routeTargetScene).c_str());
-            ImGui::TextWrapped("%s", routeNextHint.c_str());
-        }
-
-        ImGui::End();
-
-        ImGui::SetNextWindowSize(ImVec2(360, 360), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Control Panel");
-
-        ImGui::Text("Escena: %s", currentSceneName.c_str());
-        ImGui::Checkbox("Hitboxes", &showHitboxes);
-        ImGui::SameLine();
-        ImGui::Checkbox("Triggers", &showTriggers);
-        ImGui::Separator();
-
-        bool mobilityReduced = scenario_manager.isMobilityReduced();
-        if (ImGui::Checkbox("Movilidad reducida", &mobilityReduced)) {
-            scenario_manager.setMobilityReduced(mobilityReduced);
-        }
-
-        int studentType = scenario_manager.getStudentType() == StudentType::NEW_STUDENT ? 0 : 1;
-        if (ImGui::RadioButton("Nuevo", studentType == 0)) {
-            scenario_manager.setStudentType(StudentType::NEW_STUDENT);
-        }
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Regular", studentType == 1)) {
-            scenario_manager.setStudentType(StudentType::REGULAR_STUDENT);
-        }
-
-        ImGui::InputText("Inicio", startId, sizeof(startId));
-        ImGui::InputText("Destino", endId, sizeof(endId));
-
-        if (ImGui::Button("DFS")) {
-            lastTraversal = nav_service.runDfs(startId, scenario_manager.isMobilityReduced());
-            hasTraversal = true;
-            lastAction = "DFS";
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("BFS")) {
-            lastTraversal = nav_service.runBfs(startId, scenario_manager.isMobilityReduced());
-            hasTraversal = true;
-            lastAction = "BFS";
-        }
-
-        if (ImGui::Button("Camino")) {
-            lastPath = nav_service.findPath(startId, endId, scenario_manager.isMobilityReduced());
-            hasPath = true;
-            lastAction = "Path";
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Conectividad")) {
-            lastConnected = nav_service.checkConnectivity();
-            lastAction = "Connectivity";
-        }
-
-        if (ImGui::Button("Alterno")) {
-            lastPath = resilience_service.findAlternatePath(startId, endId, scenario_manager.isMobilityReduced());
-            hasPath = true;
-            lastAction = "AltPath";
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Bloquear")) {
-            resilience_service.blockEdge(startId, endId);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Desbloquear")) {
-            resilience_service.unblockAll();
-        }
-
-        if (ImGui::Button("Complejidad")) {
-            lastStats = complexity_analyzer.analyze(startId, scenario_manager.isMobilityReduced());
-            lastAction = "Complexity";
-        }
-
-        ImGui::Separator();
-        ImGui::Text("Ultima accion: %s", lastAction.c_str());
-
-        if (hasTraversal) {
-            ImGui::Text("Visitados: %d", lastTraversal.nodes_visited);
-            ImGui::Text("Tiempo: %lld us", lastTraversal.elapsed_us);
-        }
-        if (hasPath) {
-            ImGui::Text("Camino encontrado: %s", lastPath.found ? "si" : "no");
-            ImGui::Text("Peso total: %.2f", lastPath.total_weight);
-        }
-        if (lastAction == "Connectivity") {
-            ImGui::Text("Conectado: %s", lastConnected ? "si" : "no");
-        }
-        if (lastAction == "Complexity") {
-            for (const auto& stat : lastStats) {
-                ImGui::Text("%s: %d nodos, %lld us", stat.algorithm.c_str(), stat.nodes_visited, stat.elapsed_us);
-            }
-        }
-
-        ImGui::End();
+        renderMinimapRouteWindow(screenWidth, screenHeight,
+                                 selectedRouteSceneIdx, routeActive, routeTargetScene,
+                                 routeScenePlan, routePathPoints, routeNextHint,
+                                 routeRefreshCooldown, routeScenes, sceneDisplayName);
+        renderAcademicControlPanel(tabState, nav_service, scenario_manager,
+                                   complexity_analyzer, resilience_service, graph,
+                                   currentSceneName, showHitboxes, showTriggers);
         rlImGuiEnd();
 
         EndDrawing();
