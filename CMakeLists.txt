@@ -98,6 +98,14 @@ set(SOURCES
         src/services/ResilienceService.cpp
         src/services/TransitionService.cpp
         src/services/TmjLoader.cpp
+        src/services/StringUtils.cpp
+        src/services/InterestZoneLoader.cpp
+        src/services/AssetPathResolver.cpp
+        src/services/ScenePlanService.cpp
+        src/services/WalkablePathService.cpp
+        src/services/SpriteAnimationService.cpp
+        src/services/RuntimeTextService.cpp
+        src/services/MapRenderService.cpp
         src/ui/TabManager.cpp
 )
 

@@ -1,12 +1,12 @@
-#include <raylib.h>
+﻿#include <raylib.h>
 #include "rlImGui.h"
 #include "imgui.h"
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <utility>
 #include <unordered_map>
 #include <unordered_set>
 #include <queue>
@@ -15,7 +15,6 @@
 #include <cstdio>
 #include <cmath>
 #include <sstream>
-#include <nlohmann/json.hpp>
 #include "services/NavigationService.h"
 #include "services/DataManager.h"
 #include "services/ScenarioManager.h"
@@ -23,562 +22,18 @@
 #include "services/ResilienceService.h"
 #include "services/TransitionService.h"
 #include "services/TmjLoader.h"
+#include "services/StringUtils.h"
+#include "services/InterestZoneLoader.h"
+#include "services/AssetPathResolver.h"
+#include "services/ScenePlanService.h"
+#include "services/WalkablePathService.h"
+#include "services/SpriteAnimationService.h"
+#include "services/RuntimeTextService.h"
+#include "services/MapRenderService.h"
+#include "core/runtime/SceneRuntimeTypes.h"
 #include "ui/TabManager.h"
 
 namespace fs = std::filesystem;
-using json = nlohmann::json;
-
-struct InterestZone {
-    std::string name;
-    std::vector<Rectangle> rects;
-};
-
-struct MapRenderData {
-    Texture2D texture{};
-    bool hasTexture{false};
-    std::vector<Rectangle> hitboxes;
-    std::vector<InterestZone> interestZones;
-};
-
-struct SceneData {
-    Texture2D texture{};
-    std::vector<Rectangle> hitboxes;
-    std::vector<InterestZone> interestZones;
-    bool isValid{false};
-};
-
-struct SpriteAnim {
-    Texture2D idle{};
-    Texture2D walk{};
-    bool hasIdle{false};
-    bool hasWalk{false};
-    int frameWidth{32};
-    int frameHeight{32};
-    int idleFrames{1};
-    int walkFrames{1};
-    int frame{0};
-    float timer{0.0f};
-    int direction{0}; // 0=down, 1=left, 2=right, 3=up
-};
-
-struct SceneConfig {
-    std::string name;
-    std::string pngPath;
-    std::string tmjPath;
-};
-
-enum class SceneLinkType {
-    Portal,
-    Elevator,
-    StairLeft,
-    StairRight
-};
-
-struct SceneLink {
-    std::string id;
-    std::string fromScene;
-    std::string toScene;
-    std::string label;
-    Rectangle triggerRect{};
-    Vector2 arrivalSpawn{0.0f, 0.0f};
-    SceneLinkType type{SceneLinkType::Portal};
-};
-
-static std::string toLowerCopy(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return s;
-}
-
-static std::unordered_map<std::string, std::vector<InterestZone>>
-loadInterestZonesJson(const std::string& jsonPath) {
-    std::unordered_map<std::string, std::vector<InterestZone>> zonesByScene;
-    if (jsonPath.empty()) return zonesByScene;
-
-    std::ifstream input(jsonPath);
-    if (!input.is_open()) {
-        std::cerr << "[InterestZones] Cannot open: " << jsonPath << "\n";
-        return zonesByScene;
-    }
-
-    json data;
-    try {
-        input >> data;
-    } catch (const std::exception& ex) {
-        std::cerr << "[InterestZones] Parse error: " << ex.what() << "\n";
-        return zonesByScene;
-    }
-
-    if (!data.contains("scenes") || !data["scenes"].is_object()) return zonesByScene;
-
-    for (auto it = data["scenes"].begin(); it != data["scenes"].end(); ++it) {
-        const std::string sceneId = toLowerCopy(it.key());
-        if (!it.value().is_array()) continue;
-
-        for (const auto& zoneJson : it.value()) {
-            if (!zoneJson.contains("name") || !zoneJson.contains("rects")) continue;
-
-            InterestZone zone;
-            zone.name = zoneJson.value("name", "");
-            if (!zoneJson["rects"].is_array()) continue;
-
-            for (const auto& rj : zoneJson["rects"]) {
-                if (!rj.contains("x") || !rj.contains("y") ||
-                    !rj.contains("w") || !rj.contains("h")) {
-                    continue;
-                }
-                Rectangle r{};
-                r.x = rj["x"].get<float>();
-                r.y = rj["y"].get<float>();
-                r.width = rj["w"].get<float>();
-                r.height = rj["h"].get<float>();
-                zone.rects.push_back(r);
-            }
-
-            if (!zone.rects.empty()) zonesByScene[sceneId].push_back(std::move(zone));
-        }
-    }
-
-    return zonesByScene;
-}
-
-static int directionStartFrame(int direction, int totalFrames) {
-    if (totalFrames < 4) return 0;
-    const int framesPerDir = std::max(1, totalFrames / 4);
-    const int safeDir = std::clamp(direction, 0, 3);
-    return safeDir * framesPerDir;
-}
-
-static int directionalFrameCount(int totalFrames) {
-    if (totalFrames < 4) return std::max(1, totalFrames);
-    return std::max(1, totalFrames / 4);
-}
-
-static Vector2 rectCenter(const Rectangle& rect) {
-    return Vector2{rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f};
-}
-
-static float distanceBetween(const Vector2& a, const Vector2& b) {
-    const float dx = a.x - b.x;
-    const float dy = a.y - b.y;
-    return std::sqrt(dx * dx + dy * dy);
-}
-
-static float polylineLength(const std::vector<Vector2>& points) {
-    float total = 0.0f;
-    for (size_t i = 1; i < points.size(); ++i) {
-        total += distanceBetween(points[i - 1], points[i]);
-    }
-    return total;
-}
-
-static std::string formatElapsedTime(float elapsedSeconds) {
-    const int totalSeconds = std::max(0, static_cast<int>(std::round(elapsedSeconds)));
-    const int minutes = totalSeconds / 60;
-    const int seconds = totalSeconds % 60;
-    return TextFormat("%02d:%02d", minutes, seconds);
-}
-
-static std::vector<std::string> buildGraphOverviewLines(const CampusGraph& graph) {
-    std::vector<std::string> lines;
-    const auto ids = graph.nodeIds();
-    lines.reserve(ids.size() * 3);
-    lines.push_back(TextFormat("Nodes (%d):", static_cast<int>(ids.size())));
-    for (const auto& id : ids) {
-        lines.push_back(" - " + id);
-    }
-
-    lines.push_back("");
-    lines.push_back("Connections (distance):");
-
-    std::unordered_set<std::string> seenUndirected;
-    int edgeIndex = 1;
-    for (const auto& from : ids) {
-        for (const auto& e : graph.edgesFrom(from)) {
-            const std::string a = (e.from < e.to) ? e.from : e.to;
-            const std::string b = (e.from < e.to) ? e.to : e.from;
-            const std::string key = a + "|" + b + "|" + e.type;
-            if (!seenUndirected.insert(key).second) continue;
-
-            std::ostringstream oss;
-            oss.setf(std::ios::fixed);
-            oss.precision(2);
-            oss << edgeIndex++ << ". " << a << " <-> " << b
-                << " | base=" << e.base_weight
-                << " | mr=" << e.mobility_weight;
-            lines.push_back(oss.str());
-        }
-    }
-
-    return lines;
-}
-
-static std::vector<std::string> buildTraversalDetailLines(const TraversalResult& traversal,
-                                                          const char* title) {
-    std::vector<std::string> lines;
-    lines.reserve(traversal.visit_order.size() + 3);
-    lines.push_back(TextFormat("%s (visited=%d):", title, traversal.nodes_visited));
-    if (traversal.visit_order.empty()) {
-        lines.push_back("No traversal data.");
-        return lines;
-    }
-
-    for (size_t i = 0; i < traversal.visit_order.size(); ++i) {
-        const auto& node = traversal.visit_order[i];
-        const auto it = traversal.accumulated_dist.find(node);
-        const double acc = (it != traversal.accumulated_dist.end()) ? it->second : 0.0;
-
-        std::ostringstream oss;
-        oss.setf(std::ios::fixed);
-        oss.precision(2);
-        oss << (i + 1) << ". " << node << " | acc=" << acc;
-        lines.push_back(oss.str());
-    }
-
-    return lines;
-}
-
-static bool isLinkAllowed(const SceneLink& link, bool mobilityReduced) {
-    if (!mobilityReduced) return true;
-    return link.type != SceneLinkType::StairLeft &&
-           link.type != SceneLinkType::StairRight;
-}
-
-static std::vector<std::string>
-buildScenePlan(const std::string& startScene,
-               const std::string& goalScene,
-               const std::vector<SceneLink>& links,
-               bool mobilityReduced) {
-    if (startScene.empty() || goalScene.empty()) return {};
-    if (startScene == goalScene) return {startScene};
-
-    std::queue<std::string> pending;
-    std::unordered_map<std::string, std::string> previous;
-    std::unordered_set<std::string> visited;
-
-    pending.push(startScene);
-    visited.insert(startScene);
-
-    while (!pending.empty()) {
-        const std::string scene = pending.front();
-        pending.pop();
-
-        for (const auto& link : links) {
-            if (link.fromScene != scene || !isLinkAllowed(link, mobilityReduced)) continue;
-            if (!visited.insert(link.toScene).second) continue;
-            previous[link.toScene] = scene;
-
-            if (link.toScene == goalScene) {
-                std::vector<std::string> plan;
-                std::string current = goalScene;
-                plan.push_back(current);
-                while (current != startScene) {
-                    const auto it = previous.find(current);
-                    if (it == previous.end()) return {};
-                    current = it->second;
-                    plan.push_back(current);
-                }
-                std::reverse(plan.begin(), plan.end());
-                return plan;
-            }
-
-            pending.push(link.toScene);
-        }
-    }
-
-    return {};
-}
-
-static std::string findPathCandidate(const char* argv0, const std::vector<fs::path>& baseCandidates) {
-    std::vector<fs::path> candidates = baseCandidates;
-
-    if (argv0 && argv0[0] != '\0') {
-        const fs::path exePath = fs::absolute(argv0).parent_path();
-        for (const auto& base : baseCandidates) {
-            candidates.emplace_back(exePath / base);
-            candidates.emplace_back(exePath / ".." / base);
-            candidates.emplace_back(exePath / "../.." / base);
-        }
-    }
-
-    for (const auto& c : candidates) {
-        if (fs::exists(c)) return c.string();
-    }
-    return "";
-}
-
-static std::string findCampusJson(const char* argv0) {
-    return findPathCandidate(argv0, {
-        fs::path("campus.json"),
-        fs::path("../campus.json"),
-        fs::path("../../campus.json"),
-        fs::path("../EcoCampusNav/campus.json")
-    });
-}
-
-static std::string resolveAssetPath(const char* argv0, const std::string& relPath) {
-    return findPathCandidate(argv0, {
-        fs::path(relPath),
-        fs::path("..") / relPath,
-        fs::path("../..") / relPath
-    });
-}
-
-static std::string findPlayerIdleSprite(const char* argv0) {
-    return findPathCandidate(argv0, {
-        fs::path("assets/sprites/m_Character/junior_AnguloIdle.png"),
-        fs::path("../assets/sprites/m_Character/junior_AnguloIdle.png"),
-        fs::path("../../assets/sprites/m_Character/junior_AnguloIdle.png")
-    });
-}
-
-static std::string findPlayerWalkSprite(const char* argv0) {
-    return findPathCandidate(argv0, {
-        fs::path("assets/sprites/m_Character/junior_AnguloWalk.png"),
-        fs::path("../assets/sprites/m_Character/junior_AnguloWalk.png"),
-        fs::path("../../assets/sprites/m_Character/junior_AnguloWalk.png")
-    });
-}
-
-static bool intersectsAny(const Rectangle& rect, const std::vector<Rectangle>& obstacles) {
-    for (const auto& obstacle : obstacles) {
-        if (CheckCollisionRecs(rect, obstacle)) return true;
-    }
-    return false;
-}
-
-static Rectangle playerColliderAt(const Vector2& playerPos) {
-    Rectangle collider{};
-    // Huella de colision en los pies para movimiento top-down.
-    collider.x = playerPos.x - 5.0f;
-    collider.y = playerPos.y - 8.0f;
-    collider.width = 10.0f;
-    collider.height = 8.0f;
-    return collider;
-}
-
-static std::vector<Vector2> buildWalkablePath(const MapRenderData& mapData,
-                                              const Vector2& start,
-                                              const Vector2& goal) {
-    if (!mapData.hasTexture) return {};
-
-    constexpr float kCellSize = 16.0f;
-    const float texW = static_cast<float>(mapData.texture.width);
-    const float texH = static_cast<float>(mapData.texture.height);
-    const int cols = std::max(1, static_cast<int>(std::ceil(texW / kCellSize)));
-    const int rows = std::max(1, static_cast<int>(std::ceil(texH / kCellSize)));
-    const int cellCount = cols * rows;
-
-    auto idxOf = [cols](int x, int y) { return y * cols + x; };
-    auto cellX = [cols](int idx) { return idx % cols; };
-    auto cellY = [cols](int idx) { return idx / cols; };
-    auto clampCell = [&](int& x, int& y) {
-        x = std::clamp(x, 0, cols - 1);
-        y = std::clamp(y, 0, rows - 1);
-    };
-    auto cellCenter = [&](int x, int y) {
-        return Vector2{
-            std::clamp((static_cast<float>(x) + 0.5f) * kCellSize, 8.0f, texW - 8.0f),
-            std::clamp((static_cast<float>(y) + 0.5f) * kCellSize, 14.0f, texH - 8.0f)
-        };
-    };
-
-    std::vector<int8_t> walkable(cellCount, -1);
-    auto isWalkableCell = [&](int x, int y) {
-        clampCell(x, y);
-        const int idx = idxOf(x, y);
-        if (walkable[idx] != -1) return walkable[idx] == 1;
-        const bool freeCell = !intersectsAny(playerColliderAt(cellCenter(x, y)), mapData.hitboxes);
-        walkable[idx] = freeCell ? 1 : 0;
-        return freeCell;
-    };
-
-    auto nearestWalkableCell = [&](const Vector2& point) {
-        int baseX = static_cast<int>(point.x / kCellSize);
-        int baseY = static_cast<int>(point.y / kCellSize);
-        clampCell(baseX, baseY);
-        if (isWalkableCell(baseX, baseY)) return idxOf(baseX, baseY);
-
-        const int maxRadius = std::max(cols, rows);
-        int bestIdx = -1;
-        float bestDistance = std::numeric_limits<float>::max();
-        for (int radius = 1; radius <= maxRadius; ++radius) {
-            const int minX = std::max(0, baseX - radius);
-            const int maxX = std::min(cols - 1, baseX + radius);
-            const int minY = std::max(0, baseY - radius);
-            const int maxY = std::min(rows - 1, baseY + radius);
-
-            for (int y = minY; y <= maxY; ++y) {
-                for (int x = minX; x <= maxX; ++x) {
-                    const bool edgeCell = (x == minX || x == maxX || y == minY || y == maxY);
-                    if (!edgeCell || !isWalkableCell(x, y)) continue;
-                    const float dist = distanceBetween(point, cellCenter(x, y));
-                    if (dist < bestDistance) {
-                        bestDistance = dist;
-                        bestIdx = idxOf(x, y);
-                    }
-                }
-            }
-            if (bestIdx >= 0) return bestIdx;
-        }
-
-        return -1;
-    };
-
-    const int startIdx = nearestWalkableCell(start);
-    const int goalIdx = nearestWalkableCell(goal);
-    if (startIdx < 0 || goalIdx < 0) return {};
-    if (startIdx == goalIdx) return {start, goal};
-
-    struct OpenNode {
-        float fScore;
-        int idx;
-    };
-    struct OpenNodeCompare {
-        bool operator()(const OpenNode& a, const OpenNode& b) const {
-            return a.fScore > b.fScore;
-        }
-    };
-
-    std::priority_queue<OpenNode, std::vector<OpenNode>, OpenNodeCompare> open;
-    std::vector<float> gScore(cellCount, std::numeric_limits<float>::max());
-    std::vector<int> parent(cellCount, -1);
-    std::vector<bool> closed(cellCount, false);
-
-    gScore[startIdx] = 0.0f;
-    open.push({distanceBetween(cellCenter(cellX(startIdx), cellY(startIdx)),
-                               cellCenter(cellX(goalIdx), cellY(goalIdx))),
-               startIdx});
-
-    while (!open.empty()) {
-        const int current = open.top().idx;
-        open.pop();
-        if (closed[current]) continue;
-        if (current == goalIdx) break;
-        closed[current] = true;
-
-        const int cx = cellX(current);
-        const int cy = cellY(current);
-        for (int dy = -1; dy <= 1; ++dy) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                if (dx == 0 && dy == 0) continue;
-                const int nx = cx + dx;
-                const int ny = cy + dy;
-                if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
-                if (!isWalkableCell(nx, ny)) continue;
-                if (dx != 0 && dy != 0 &&
-                    (!isWalkableCell(cx + dx, cy) || !isWalkableCell(cx, cy + dy))) {
-                    continue;
-                }
-
-                const int next = idxOf(nx, ny);
-                const float stepCost = (dx != 0 && dy != 0) ? 1.41421356f : 1.0f;
-                const float tentative = gScore[current] + stepCost;
-                if (tentative >= gScore[next]) continue;
-
-                parent[next] = current;
-                gScore[next] = tentative;
-                const float heuristic =
-                    distanceBetween(cellCenter(nx, ny),
-                                    cellCenter(cellX(goalIdx), cellY(goalIdx)));
-                open.push({tentative + heuristic, next});
-            }
-        }
-    }
-
-    if (parent[goalIdx] == -1) return {start, goal};
-
-    std::vector<Vector2> path;
-    for (int current = goalIdx; current != -1; current = parent[current]) {
-        path.push_back(cellCenter(cellX(current), cellY(current)));
-        if (current == startIdx) break;
-    }
-    std::reverse(path.begin(), path.end());
-    if (!path.empty()) {
-        path.front() = start;
-        path.back() = goal;
-    }
-    return path;
-}
-
-static Vector2 findSpawnPoint(const MapRenderData& mapData) {
-    if (!mapData.hasTexture) return {100.0f, 100.0f};
-
-    const float maxX = static_cast<float>(mapData.texture.width) - 20.0f;
-    const float maxY = static_cast<float>(mapData.texture.height) - 20.0f;
-
-    // Priorizar spawn en esquina inferior derecha (zona parada de bus).
-    const float preferredX = std::clamp(maxX * 0.88f, 20.0f, maxX);
-    const float preferredY = std::clamp(maxY * 0.90f, 40.0f, maxY);
-    for (float radius = 0.0f; radius <= 240.0f; radius += 16.0f) {
-        for (float dy = -radius; dy <= radius; dy += 16.0f) {
-            for (float dx = -radius; dx <= radius; dx += 16.0f) {
-                const float x = std::clamp(preferredX + dx, 20.0f, maxX);
-                const float y = std::clamp(preferredY + dy, 40.0f, maxY);
-                const Vector2 p{x, y};
-                if (!intersectsAny(playerColliderAt(p), mapData.hitboxes)) return p;
-            }
-        }
-    }
-
-    // Fallback general.
-    for (float y = maxY * 0.5f; y < maxY; y += 16.0f) {
-        for (float x = 20.0f; x < maxX; x += 16.0f) {
-            const Vector2 p{x, y};
-            if (!intersectsAny(playerColliderAt(p), mapData.hitboxes)) return p;
-        }
-    }
-    return {static_cast<float>(mapData.texture.width) * 0.5f, static_cast<float>(mapData.texture.height) * 0.5f};
-}
-
-static void drawMapWithHitboxes(const MapRenderData& mapData, bool showHitboxes) {
-    if (!mapData.hasTexture) return;
-    DrawTexture(mapData.texture, 0, 0, WHITE);
-
-    if (!showHitboxes) return;
-
-    for (const auto& h : mapData.hitboxes) {
-        DrawRectangleLinesEx(h, 1.5f, Color{255, 80, 80, 220});
-    }
-}
-
-static void drawInterestZones(const std::vector<InterestZone>& zones) {
-    const Color fill = Color{255, 200, 60, 60};
-    const Color border = Color{255, 180, 40, 200};
-    const Color labelBg = Color{20, 20, 20, 200};
-    const Color labelFg = Color{255, 230, 160, 230};
-    const int fontSize = 14;
-
-    for (const auto& zone : zones) {
-        for (const auto& r : zone.rects) {
-            DrawRectangleRec(r, fill);
-            DrawRectangleLinesEx(r, 2.0f, border);
-        }
-        if (!zone.rects.empty() && !zone.name.empty()) {
-            const auto& r0 = zone.rects.front();
-            const int textW = MeasureText(zone.name.c_str(), fontSize);
-            const int textX = static_cast<int>(r0.x) + 6;
-            const int textY = static_cast<int>(r0.y) + 6;
-            DrawRectangle(textX - 4, textY - 3, textW + 8, fontSize + 6, labelBg);
-            DrawText(zone.name.c_str(), textX, textY, fontSize, labelFg);
-        }
-
-        // Integration marker: make POIs explicit for the academic runtime overlay.
-        Vector2 marker = {0.0f, 0.0f};
-        for (const auto& r : zone.rects) {
-            marker.x += r.x + r.width * 0.5f;
-            marker.y += r.y + r.height * 0.5f;
-        }
-        if (!zone.rects.empty()) {
-            marker.x /= static_cast<float>(zone.rects.size());
-            marker.y /= static_cast<float>(zone.rects.size());
-            DrawCircleV(marker, 7.0f, Color{255, 190, 40, 235});
-            DrawCircleLines(static_cast<int>(marker.x), static_cast<int>(marker.y), 7.0f,
-                            Color{255, 245, 180, 240});
-        }
-    }
-}
 
 struct VisualPoiNode {
     std::string sceneId;
@@ -605,7 +60,7 @@ static std::vector<VisualPoiNode> collectVisualPoiNodes(
     const std::unordered_map<std::string, SceneData>& sceneDataMap) {
     std::vector<VisualPoiNode> pois;
     for (const auto& [sceneName, sceneData] : sceneDataMap) {
-        const std::string sceneId = toLowerCopy(sceneName);
+        const std::string sceneId = StringUtils::toLowerCopy(sceneName);
         for (const auto& zone : sceneData.interestZones) {
             if (zone.rects.empty()) continue;
             Vector2 center{0.0f, 0.0f};
@@ -718,7 +173,7 @@ static bool comboSelectNode(const char* label,
 }
 
 static bool linkMatchesEdgeType(SceneLinkType linkType, const std::string& edgeType) {
-    const std::string lowered = toLowerCopy(edgeType);
+    const std::string lowered = StringUtils::toLowerCopy(edgeType);
     switch (linkType) {
         case SceneLinkType::Elevator: return lowered.find("elev") != std::string::npos;
         case SceneLinkType::StairLeft:
@@ -734,14 +189,14 @@ static const Edge* findBestEdgeForLink(const CampusGraph& graph,
                                        const SceneLink& link) {
     const Edge* best = nullptr;
     for (const auto& edge : graph.edgesFrom(fromSceneId)) {
-        if (edge.to != toLowerCopy(link.toScene)) continue;
+        if (edge.to != StringUtils::toLowerCopy(link.toScene)) continue;
         if (!linkMatchesEdgeType(link.type, edge.type)) continue;
         if (!best || edge.base_weight < best->base_weight) best = &edge;
     }
     if (best) return best;
 
     for (const auto& edge : graph.edgesFrom(fromSceneId)) {
-        if (edge.to == toLowerCopy(link.toScene)) {
+        if (edge.to == StringUtils::toLowerCopy(link.toScene)) {
             if (!best || edge.base_weight < best->base_weight) best = &edge;
         }
     }
@@ -755,27 +210,27 @@ static std::vector<Vector2> buildOverlayPathForScene(const std::string& currentS
                                                      const Vector2& playerPos,
                                                      bool mobilityReduced,
                                                      const std::function<Vector2(const std::string&)>& sceneTargetPoint) {
-    const std::string currentSceneId = toLowerCopy(currentSceneName);
+    const std::string currentSceneId = StringUtils::toLowerCopy(currentSceneName);
     if (pathNodes.empty()) return {};
 
     const auto currentIt = std::find(pathNodes.begin(), pathNodes.end(), currentSceneId);
     if (currentIt == pathNodes.end()) return {};
 
     if (std::next(currentIt) == pathNodes.end()) {
-        return buildWalkablePath(mapData, playerPos, sceneTargetPoint(currentSceneId));
+        return WalkablePathService::buildWalkablePath(mapData, playerPos, sceneTargetPoint(currentSceneId));
     }
 
     const std::string nextSceneId = *std::next(currentIt);
     float bestLen = std::numeric_limits<float>::max();
     std::vector<Vector2> bestPath;
     for (const auto& link : sceneLinks) {
-        if (toLowerCopy(link.fromScene) != currentSceneId || toLowerCopy(link.toScene) != nextSceneId) continue;
-        if (!isLinkAllowed(link, mobilityReduced)) continue;
+        if (StringUtils::toLowerCopy(link.fromScene) != currentSceneId || StringUtils::toLowerCopy(link.toScene) != nextSceneId) continue;
+        if (!ScenePlanService::isLinkAllowed(link, mobilityReduced)) continue;
 
-        const auto candidate = buildWalkablePath(mapData, playerPos, rectCenter(link.triggerRect));
+        const auto candidate = WalkablePathService::buildWalkablePath(mapData, playerPos, WalkablePathService::rectCenter(link.triggerRect));
         if (candidate.empty()) continue;
 
-        const float len = polylineLength(candidate);
+        const float len = WalkablePathService::polylineLength(candidate);
         if (len < bestLen) {
             bestLen = len;
             bestPath = candidate;
@@ -792,7 +247,7 @@ static void drawCurrentSceneNavigationOverlay(
     const std::vector<std::string>& activePathNodes,
     const std::vector<std::string>& blockedNodes,
     bool mobilityReduced) {
-    const std::string currentSceneId = toLowerCopy(currentSceneName);
+    const std::string currentSceneId = StringUtils::toLowerCopy(currentSceneName);
     if (!graph.hasNode(currentSceneId)) return;
 
     const Node& sceneNode = graph.getNode(currentSceneId);
@@ -802,16 +257,16 @@ static void drawCurrentSceneNavigationOverlay(
 
     std::unordered_set<std::string> drawnTargets;
     for (const auto& link : sceneLinks) {
-        if (toLowerCopy(link.fromScene) != currentSceneId) continue;
+        if (StringUtils::toLowerCopy(link.fromScene) != currentSceneId) continue;
 
         const Edge* edge = findBestEdgeForLink(graph, currentSceneId, link);
-        const std::string dedupeKey = currentSceneId + "|" + toLowerCopy(link.toScene) + "|" +
+        const std::string dedupeKey = currentSceneId + "|" + StringUtils::toLowerCopy(link.toScene) + "|" +
                                       (edge ? edge->type : std::string("link"));
         if (!drawnTargets.insert(dedupeKey).second) continue;
 
-        const Vector2 targetPos = rectCenter(link.triggerRect);
-        const bool edgeAllowed = edge ? isOverlayEdgeAllowed(*edge, mobilityReduced) : isLinkAllowed(link, mobilityReduced);
-        const bool onActivePath = pathContainsDirectedStep(activePathNodes, currentSceneId, toLowerCopy(link.toScene));
+        const Vector2 targetPos = WalkablePathService::rectCenter(link.triggerRect);
+        const bool edgeAllowed = edge ? isOverlayEdgeAllowed(*edge, mobilityReduced) : ScenePlanService::isLinkAllowed(link, mobilityReduced);
+        const bool onActivePath = pathContainsDirectedStep(activePathNodes, currentSceneId, StringUtils::toLowerCopy(link.toScene));
 
         const Color edgeColor = onActivePath
             ? Color{70, 210, 255, 255}
@@ -829,7 +284,7 @@ static void drawCurrentSceneNavigationOverlay(
             DrawText(weightLabel.c_str(), textX, textY, 12, Color{255, 245, 200, 240});
         }
 
-        const std::string sceneLabel = toLowerCopy(link.toScene);
+        const std::string sceneLabel = StringUtils::toLowerCopy(link.toScene);
         DrawText(sceneLabel.c_str(), static_cast<int>(targetPos.x) + 8, static_cast<int>(targetPos.y) - 6,
                  12, Color{240, 245, 255, 220});
     }
@@ -978,7 +433,7 @@ static void renderAcademicRuntimeOverlay(
 
     ImGui::Separator();
     ImGui::Text("Panel de explicacion de logica");
-    ImGui::Text("Escena actual: %s", sceneDisplayName(toLowerCopy(currentSceneName)).c_str());
+    ImGui::Text("Escena actual: %s", sceneDisplayName(StringUtils::toLowerCopy(currentSceneName)).c_str());
     ImGui::Text("Perfil activo: %s",
                 scenarioManager.getStudentType() == StudentType::NEW_STUDENT
                     ? (scenarioManager.isMobilityReduced() ? "Nuevo + Movilidad Reducida" : "Nuevo")
@@ -1073,7 +528,7 @@ static void renderAcademicRuntimeOverlay(
 
         const ImVec2 nodePos{cellMin.x + cellW * 0.5f, cellMin.y + 34.0f};
         nodeScreenPositions[sceneId] = nodePos;
-        const bool isCurrentScene = sceneId == toLowerCopy(currentSceneName);
+        const bool isCurrentScene = sceneId == StringUtils::toLowerCopy(currentSceneName);
         const bool isBlockedScene =
             std::find(blockedNodes.begin(), blockedNodes.end(), sceneId) != blockedNodes.end();
         const ImU32 nodeColor = isBlockedScene ? IM_COL32(220, 90, 90, 255)
@@ -1385,7 +840,7 @@ static void drawRaylibInfoMenu(
     DrawText(TextFormat("Status: %s", routeStatus), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(22);
     DrawText(TextFormat("Progress: %.1f%%", routeProgressPct),
              rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(22);
-    const std::string elapsedLabel = formatElapsedTime(routeTravelElapsed);
+    const std::string elapsedLabel = RuntimeTextService::formatElapsedTime(routeTravelElapsed);
     DrawText(TextFormat("Elapsed time: %s", elapsedLabel.c_str()),
              rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(26);
     DrawText(TextFormat("Blocked nodes: %d", static_cast<int>(blockedNodes.size())),
@@ -1420,13 +875,13 @@ static void drawRaylibInfoMenu(
     std::vector<std::string> activeLines;
     int* activePage = &graphPage;
     if (rubricViewMode == 0) {
-        activeLines = buildGraphOverviewLines(graph);
+        activeLines = RuntimeTextService::buildGraphOverviewLines(graph);
         activePage = &graphPage;
     } else if (rubricViewMode == 1) {
-        activeLines = buildTraversalDetailLines(dfsTraversal, "DFS order + accumulated distance");
+        activeLines = RuntimeTextService::buildTraversalDetailLines(dfsTraversal, "DFS order + accumulated distance");
         activePage = &dfsPage;
     } else {
-        activeLines = buildTraversalDetailLines(bfsTraversal, "BFS order + accumulated distance");
+        activeLines = RuntimeTextService::buildTraversalDetailLines(bfsTraversal, "BFS order + accumulated distance");
         activePage = &bfsPage;
     }
 
@@ -1460,7 +915,7 @@ static void drawRaylibInfoMenu(
 int main(int argc, char* argv[]) {
     (void)argc;
 
-    std::string path = findCampusJson(argc > 0 ? argv[0] : nullptr);
+    std::string path = AssetPathResolver::findCampusJson(argc > 0 ? argv[0] : nullptr);
     if (path.empty()) {
         std::cerr << "campus.json was not found. Place the file in the working directory.\n";
         return 1;
@@ -1496,15 +951,15 @@ int main(int argc, char* argv[]) {
 
     std::unordered_map<std::string, std::string> sceneToTmjPath;
     for (const auto& sc : allScenes) {
-        const std::string tmjPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, sc.tmjPath);
+        const std::string tmjPath = AssetPathResolver::resolveAssetPath(argc > 0 ? argv[0] : nullptr, sc.tmjPath);
         if (!tmjPath.empty()) {
             sceneToTmjPath[sc.name] = tmjPath;
         }
     }
 
     const std::string interestZonesPath =
-        resolveAssetPath(argc > 0 ? argv[0] : nullptr, "assets/interest_zones.json");
-    const auto interestZonesByScene = loadInterestZonesJson(interestZonesPath);
+        AssetPathResolver::resolveAssetPath(argc > 0 ? argv[0] : nullptr, "assets/interest_zones.json");
+    const auto interestZonesByScene = InterestZoneLoader::loadFromJson(interestZonesPath);
 
     DataManager dataManager;
     CampusGraph graph;
@@ -1531,8 +986,8 @@ int main(int argc, char* argv[]) {
 
     for (const auto& sc : allScenes) {
         SceneData sd;
-        const std::string sceneKey = toLowerCopy(sc.name);
-        const std::string tmjPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, sc.tmjPath);
+        const std::string sceneKey = StringUtils::toLowerCopy(sc.name);
+        const std::string tmjPath = AssetPathResolver::resolveAssetPath(argc > 0 ? argv[0] : nullptr, sc.tmjPath);
         if (!tmjPath.empty()) {
             try {
                 sd.hitboxes = loadHitboxesFromTmj(tmjPath);
@@ -1558,7 +1013,7 @@ int main(int argc, char* argv[]) {
     TransitionService transitions;
 
     for (const auto& sc : allScenes) {
-        const std::string tmjPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, sc.tmjPath);
+        const std::string tmjPath = AssetPathResolver::resolveAssetPath(argc > 0 ? argv[0] : nullptr, sc.tmjPath);
         if (tmjPath.empty()) continue;
 
         const auto portalDefs = loadPortalsFromTmj(tmjPath, sc.name);
@@ -1717,7 +1172,7 @@ int main(int argc, char* argv[]) {
     bool showInterestZones = true;
     {
         const auto& initConfig = sceneMap.at(initialSceneName);
-        const std::string pngPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, initConfig.pngPath);
+        const std::string pngPath = AssetPathResolver::resolveAssetPath(argc > 0 ? argv[0] : nullptr, initConfig.pngPath);
         if (!pngPath.empty()) {
             mapData.texture = LoadTexture(pngPath.c_str());
             mapData.hasTexture = mapData.texture.id != 0;
@@ -1732,8 +1187,8 @@ int main(int argc, char* argv[]) {
     }
 
     SpriteAnim playerAnim;
-    const std::string idlePath = findPlayerIdleSprite(argc > 0 ? argv[0] : nullptr);
-    const std::string walkPath = findPlayerWalkSprite(argc > 0 ? argv[0] : nullptr);
+    const std::string idlePath = AssetPathResolver::findPlayerIdleSprite(argc > 0 ? argv[0] : nullptr);
+    const std::string walkPath = AssetPathResolver::findPlayerWalkSprite(argc > 0 ? argv[0] : nullptr);
     if (!idlePath.empty()) {
         playerAnim.idle = LoadTexture(idlePath.c_str());
         playerAnim.hasIdle = playerAnim.idle.id != 0;
@@ -1765,7 +1220,7 @@ int main(int argc, char* argv[]) {
             const auto spIt = scIt->second.find("bus_arrive");
             if (spIt != scIt->second.end()) return spIt->second;
         }
-        return findSpawnPoint(mapData);
+        return WalkablePathService::findSpawnPoint(mapData);
     }();
     const float playerSpeed = 150.0f;
     const float sprintMultiplier = 1.8f;
@@ -1867,7 +1322,7 @@ int main(int argc, char* argv[]) {
         if (mapData.hasTexture) {
             candidate.x = std::clamp(candidate.x, 8.0f, static_cast<float>(mapData.texture.width) - 8.0f);
         }
-        if (!intersectsAny(playerColliderAt(candidate), mapData.hitboxes)) {
+        if (!WalkablePathService::intersectsAny(WalkablePathService::playerColliderAt(candidate), mapData.hitboxes)) {
             playerPos.x = candidate.x;
         }
 
@@ -1876,7 +1331,7 @@ int main(int argc, char* argv[]) {
         if (mapData.hasTexture) {
             candidate.y = std::clamp(candidate.y, 14.0f, static_cast<float>(mapData.texture.height));
         }
-        if (!intersectsAny(playerColliderAt(candidate), mapData.hitboxes)) {
+        if (!WalkablePathService::intersectsAny(WalkablePathService::playerColliderAt(candidate), mapData.hitboxes)) {
             playerPos.y = candidate.y;
         }
         if (routeActive && !routeTravelCompleted) {
@@ -1888,7 +1343,7 @@ int main(int argc, char* argv[]) {
         if (routeActive) {
             routeRefreshCooldown -= dt;
             const bool mobilityChanged = routeMobilityReduced != scenario_manager.isMobilityReduced();
-            const bool movedEnough = distanceBetween(playerPos, routeAnchorPos) >= 28.0f;
+            const bool movedEnough = WalkablePathService::distanceBetween(playerPos, routeAnchorPos) >= 28.0f;
             const bool sceneChanged = routePathScene != currentSceneName;
 
             if (routeRefreshCooldown <= 0.0f || mobilityChanged || movedEnough || sceneChanged) {
@@ -1912,7 +1367,7 @@ int main(int argc, char* argv[]) {
                 const bool atDestinationScene = currentSceneId == routeTargetScene;
                 if (atDestinationScene) {
                     const Vector2 goal = sceneTargetPoint(routeTargetScene);
-                    const float currentToGoal = distanceBetween(playerPos, goal);
+                    const float currentToGoal = WalkablePathService::distanceBetween(playerPos, goal);
                     if (routeLegSceneId != currentSceneId || routeLegNextSceneId != routeTargetScene ||
                         routeLegStartDistance <= 0.0f) {
                         routeLegSceneId = currentSceneId;
@@ -1922,7 +1377,7 @@ int main(int argc, char* argv[]) {
 
                     const float localProgress = std::clamp(1.0f - (currentToGoal / routeLegStartDistance), 0.0f, 1.0f);
                     routeProgressPct = std::max(routeProgressPct, localProgress * 100.0f);
-                    routePathPoints = buildWalkablePath(mapData, playerPos, goal);
+                    routePathPoints = WalkablePathService::buildWalkablePath(mapData, playerPos, goal);
                     routeNextHint = currentToGoal <= 24.0f
                         ? "Destination reached"
                         : "Follow the route to the destination";
@@ -1945,13 +1400,13 @@ int main(int argc, char* argv[]) {
                     for (const auto& link : sceneLinks) {
                         if (canonicalSceneId(link.fromScene) != currentSceneId ||
                             canonicalSceneId(link.toScene) != nextScene ||
-                            !isLinkAllowed(link, routeMobilityReduced)) {
+                            !ScenePlanService::isLinkAllowed(link, routeMobilityReduced)) {
                             continue;
                         }
                         const std::vector<Vector2> candidatePath =
-                            buildWalkablePath(mapData, playerPos, rectCenter(link.triggerRect));
+                            WalkablePathService::buildWalkablePath(mapData, playerPos, WalkablePathService::rectCenter(link.triggerRect));
                         if (candidatePath.empty()) continue;
-                        const float len = polylineLength(candidatePath);
+                        const float len = WalkablePathService::polylineLength(candidatePath);
                         if (len < bestLen) {
                             bestLen = len;
                             bestPath = candidatePath;
@@ -1974,7 +1429,7 @@ int main(int argc, char* argv[]) {
 
                     float localProgress = 0.0f;
                     if (!routePathPoints.empty()) {
-                        const float currentToGoal = distanceBetween(playerPos, routePathPoints.back());
+                        const float currentToGoal = WalkablePathService::distanceBetween(playerPos, routePathPoints.back());
                         if (routeLegSceneId != currentSceneId || routeLegNextSceneId != nextScene ||
                             routeLegStartDistance <= 0.0f) {
                             routeLegSceneId = currentSceneId;
@@ -2023,7 +1478,7 @@ int main(int argc, char* argv[]) {
 
         // --- Scene transition (portal & elevator detection + fade state machine) ---
         if (!infoMenuOpen) {
-            transitions.update(playerColliderAt(playerPos), currentSceneName, dt);
+            transitions.update(WalkablePathService::playerColliderAt(playerPos), currentSceneName, dt);
         }
 
         // Perform scene swap at peak blackness (alpha == 1.0)
@@ -2039,7 +1494,7 @@ int main(int argc, char* argv[]) {
 
             const auto scIt = sceneMap.find(req.targetScene);
             if (scIt != sceneMap.end()) {
-                const std::string pngPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, scIt->second.pngPath);
+                const std::string pngPath = AssetPathResolver::resolveAssetPath(argc > 0 ? argv[0] : nullptr, scIt->second.pngPath);
                 if (!pngPath.empty()) {
                     mapData.texture    = LoadTexture(pngPath.c_str());
                     mapData.hasTexture = mapData.texture.id != 0;
@@ -2064,7 +1519,7 @@ int main(int argc, char* argv[]) {
             const float frameStep = sprinting ? (1.0f / 16.0f) : (1.0f / 12.0f);
             if (playerAnim.timer >= frameStep) {
                 playerAnim.timer = 0.0f;
-                playerAnim.frame = (playerAnim.frame + 1) % directionalFrameCount(playerAnim.walkFrames);
+                playerAnim.frame = (playerAnim.frame + 1) % SpriteAnimationService::directionalFrameCount(playerAnim.walkFrames);
             }
         } else {
             playerAnim.timer = 0.0f;
@@ -2075,13 +1530,13 @@ int main(int argc, char* argv[]) {
         ClearBackground({18, 20, 28, 255});
         BeginMode2D(camera);
         if (mapData.hasTexture) {
-            drawMapWithHitboxes(mapData, showHitboxes);
+            MapRenderService::drawMapWithHitboxes(mapData, showHitboxes);
         } else {
             DrawRectangle(0, 0, screenWidth, screenHeight, {22, 26, 36, 255});
         }
 
         if (showInterestZones && mapData.hasTexture) {
-            drawInterestZones(mapData.interestZones);
+            MapRenderService::drawInterestZones(mapData.interestZones);
         }
 
         if (showNavigationGraph && mapData.hasTexture) {
@@ -2148,8 +1603,8 @@ int main(int argc, char* argv[]) {
         if (canDrawSprite) {
             const Texture2D tex = useWalk ? playerAnim.walk : playerAnim.idle;
             const int activeFrames = useWalk ? playerAnim.walkFrames : playerAnim.idleFrames;
-            const int baseFrame = directionStartFrame(playerAnim.direction, activeFrames);
-            const int frameCount = directionalFrameCount(activeFrames);
+            const int baseFrame = SpriteAnimationService::directionStartFrame(playerAnim.direction, activeFrames);
+            const int frameCount = SpriteAnimationService::directionalFrameCount(activeFrames);
             const int activeFrame = baseFrame + (playerAnim.frame % frameCount);
             const float frameW = static_cast<float>(playerAnim.frameWidth);
             const float frameH = static_cast<float>(playerAnim.frameHeight);
@@ -2354,3 +1809,5 @@ int main(int argc, char* argv[]) {
     CloseWindow();
     return 0;
 }
+
+
