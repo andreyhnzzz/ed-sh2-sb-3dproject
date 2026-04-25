@@ -563,7 +563,573 @@ static void drawInterestZones(const std::vector<InterestZone>& zones) {
             DrawRectangle(textX - 4, textY - 3, textW + 8, fontSize + 6, labelBg);
             DrawText(zone.name.c_str(), textX, textY, fontSize, labelFg);
         }
+
+        // Integration marker: make POIs explicit for the academic runtime overlay.
+        Vector2 marker = {0.0f, 0.0f};
+        for (const auto& r : zone.rects) {
+            marker.x += r.x + r.width * 0.5f;
+            marker.y += r.y + r.height * 0.5f;
+        }
+        if (!zone.rects.empty()) {
+            marker.x /= static_cast<float>(zone.rects.size());
+            marker.y /= static_cast<float>(zone.rects.size());
+            DrawCircleV(marker, 7.0f, Color{255, 190, 40, 235});
+            DrawCircleLines(static_cast<int>(marker.x), static_cast<int>(marker.y), 7.0f,
+                            Color{255, 245, 180, 240});
+        }
     }
+}
+
+struct VisualPoiNode {
+    std::string sceneId;
+    std::string label;
+    Vector2 worldPos{0.0f, 0.0f};
+};
+
+static bool isOverlayEdgeAllowed(const Edge& edge, bool mobilityReduced) {
+    if (edge.currently_blocked) return false;
+    if (mobilityReduced && edge.blocked_for_mr) return false;
+    return true;
+}
+
+static bool pathContainsDirectedStep(const std::vector<std::string>& path,
+                                     const std::string& from,
+                                     const std::string& to) {
+    for (size_t i = 1; i < path.size(); ++i) {
+        if (path[i - 1] == from && path[i] == to) return true;
+    }
+    return false;
+}
+
+static std::vector<VisualPoiNode> collectVisualPoiNodes(
+    const std::unordered_map<std::string, SceneData>& sceneDataMap) {
+    std::vector<VisualPoiNode> pois;
+    for (const auto& [sceneName, sceneData] : sceneDataMap) {
+        const std::string sceneId = toLowerCopy(sceneName);
+        for (const auto& zone : sceneData.interestZones) {
+            if (zone.rects.empty()) continue;
+            Vector2 center{0.0f, 0.0f};
+            for (const auto& rect : zone.rects) {
+                center.x += rect.x + rect.width * 0.5f;
+                center.y += rect.y + rect.height * 0.5f;
+            }
+            center.x /= static_cast<float>(zone.rects.size());
+            center.y /= static_cast<float>(zone.rects.size());
+            pois.push_back({sceneId, zone.name, center});
+        }
+    }
+    return pois;
+}
+
+static int countProfileDiscardedEdges(const CampusGraph& graph, bool mobilityReduced) {
+    if (!mobilityReduced) return 0;
+
+    std::unordered_set<std::string> seen;
+    int count = 0;
+    for (const auto& from : graph.nodeIds()) {
+        for (const auto& edge : graph.edgesFrom(from)) {
+            const std::string a = (edge.from < edge.to) ? edge.from : edge.to;
+            const std::string b = (edge.from < edge.to) ? edge.to : edge.from;
+            const std::string key = a + "|" + b + "|" + edge.type;
+            if (!seen.insert(key).second) continue;
+            if (edge.blocked_for_mr) ++count;
+        }
+    }
+    return count;
+}
+
+static std::string buildSelectionCriterion(StudentType studentType, bool mobilityReduced) {
+    if (mobilityReduced && studentType == StudentType::NEW_STUDENT) {
+        return "Evita gradas y pasa por referencias conocidas";
+    }
+    if (mobilityReduced) return "Prioriza accesibilidad y evita gradas";
+    if (studentType == StudentType::NEW_STUDENT) return "Pasa por referencias conocidas";
+    return "Prioriza distancia minima";
+}
+
+static PathResult mergeProfiledSegments(const std::vector<PathResult>& segments) {
+    PathResult merged;
+    if (segments.empty()) return merged;
+
+    merged.found = true;
+    for (size_t i = 0; i < segments.size(); ++i) {
+        const auto& segment = segments[i];
+        if (!segment.found || segment.path.empty()) return {};
+
+        merged.total_weight += segment.total_weight;
+        if (i == 0) merged.path = segment.path;
+        else merged.path.insert(merged.path.end(), segment.path.begin() + 1, segment.path.end());
+    }
+    return merged;
+}
+
+static PathResult runProfiledDfsPath(const CampusGraph& graph,
+                                     NavigationService& navService,
+                                     ScenarioManager& scenarioManager,
+                                     const std::string& origin,
+                                     const std::string& destination) {
+    const auto waypoints = scenarioManager.applyProfile(graph, origin, destination);
+    if (waypoints.size() < 2) return {};
+
+    std::vector<PathResult> segments;
+    segments.reserve(waypoints.size() - 1);
+    for (size_t i = 1; i < waypoints.size(); ++i) {
+        segments.push_back(navService.findPathDfs(waypoints[i - 1], waypoints[i],
+                                                  scenarioManager.isMobilityReduced()));
+    }
+    return mergeProfiledSegments(segments);
+}
+
+static PathResult runProfiledAlternatePath(const CampusGraph& graph,
+                                           ResilienceService& resilienceService,
+                                           ScenarioManager& scenarioManager,
+                                           const std::string& origin,
+                                           const std::string& destination) {
+    const auto waypoints = scenarioManager.applyProfile(graph, origin, destination);
+    if (waypoints.size() < 2) return {};
+
+    std::vector<PathResult> segments;
+    segments.reserve(waypoints.size() - 1);
+    for (size_t i = 1; i < waypoints.size(); ++i) {
+        segments.push_back(resilienceService.findAlternatePath(waypoints[i - 1], waypoints[i],
+                                                               scenarioManager.isMobilityReduced()));
+    }
+    return mergeProfiledSegments(segments);
+}
+
+static bool comboSelectNode(const char* label,
+                            const std::vector<std::string>& nodeIds,
+                            char* buffer,
+                            size_t bufferSize) {
+    const char* preview = buffer[0] != '\0' ? buffer : "(select)";
+    bool changed = false;
+    if (ImGui::BeginCombo(label, preview)) {
+        for (const auto& nodeId : nodeIds) {
+            const bool selected = std::string(buffer) == nodeId;
+            if (ImGui::Selectable(nodeId.c_str(), selected)) {
+                std::snprintf(buffer, bufferSize, "%s", nodeId.c_str());
+                changed = true;
+            }
+            if (selected) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+
+static bool linkMatchesEdgeType(SceneLinkType linkType, const std::string& edgeType) {
+    const std::string lowered = toLowerCopy(edgeType);
+    switch (linkType) {
+        case SceneLinkType::Elevator: return lowered.find("elev") != std::string::npos;
+        case SceneLinkType::StairLeft:
+        case SceneLinkType::StairRight: return lowered.find("escal") != std::string::npos ||
+                                               lowered.find("stair") != std::string::npos;
+        case SceneLinkType::Portal:
+        default: return lowered.find("portal") != std::string::npos;
+    }
+}
+
+static const Edge* findBestEdgeForLink(const CampusGraph& graph,
+                                       const std::string& fromSceneId,
+                                       const SceneLink& link) {
+    const Edge* best = nullptr;
+    for (const auto& edge : graph.edgesFrom(fromSceneId)) {
+        if (edge.to != toLowerCopy(link.toScene)) continue;
+        if (!linkMatchesEdgeType(link.type, edge.type)) continue;
+        if (!best || edge.base_weight < best->base_weight) best = &edge;
+    }
+    if (best) return best;
+
+    for (const auto& edge : graph.edgesFrom(fromSceneId)) {
+        if (edge.to == toLowerCopy(link.toScene)) {
+            if (!best || edge.base_weight < best->base_weight) best = &edge;
+        }
+    }
+    return best;
+}
+
+static std::vector<Vector2> buildOverlayPathForScene(const std::string& currentSceneName,
+                                                     const std::vector<std::string>& pathNodes,
+                                                     const std::vector<SceneLink>& sceneLinks,
+                                                     const MapRenderData& mapData,
+                                                     const Vector2& playerPos,
+                                                     bool mobilityReduced,
+                                                     const std::function<Vector2(const std::string&)>& sceneTargetPoint) {
+    const std::string currentSceneId = toLowerCopy(currentSceneName);
+    if (pathNodes.empty()) return {};
+
+    const auto currentIt = std::find(pathNodes.begin(), pathNodes.end(), currentSceneId);
+    if (currentIt == pathNodes.end()) return {};
+
+    if (std::next(currentIt) == pathNodes.end()) {
+        return buildWalkablePath(mapData, playerPos, sceneTargetPoint(currentSceneId));
+    }
+
+    const std::string nextSceneId = *std::next(currentIt);
+    float bestLen = std::numeric_limits<float>::max();
+    std::vector<Vector2> bestPath;
+    for (const auto& link : sceneLinks) {
+        if (toLowerCopy(link.fromScene) != currentSceneId || toLowerCopy(link.toScene) != nextSceneId) continue;
+        if (!isLinkAllowed(link, mobilityReduced)) continue;
+
+        const auto candidate = buildWalkablePath(mapData, playerPos, rectCenter(link.triggerRect));
+        if (candidate.empty()) continue;
+
+        const float len = polylineLength(candidate);
+        if (len < bestLen) {
+            bestLen = len;
+            bestPath = candidate;
+        }
+    }
+    return bestPath;
+}
+
+static void drawCurrentSceneNavigationOverlay(
+    const CampusGraph& graph,
+    const std::string& currentSceneName,
+    const std::vector<SceneLink>& sceneLinks,
+    const std::vector<InterestZone>& interestZones,
+    const std::vector<std::string>& activePathNodes,
+    const std::vector<std::string>& blockedNodes,
+    bool mobilityReduced) {
+    const std::string currentSceneId = toLowerCopy(currentSceneName);
+    if (!graph.hasNode(currentSceneId)) return;
+
+    const Node& sceneNode = graph.getNode(currentSceneId);
+    const Vector2 scenePos{static_cast<float>(sceneNode.x), static_cast<float>(sceneNode.y)};
+    const bool nodeBlocked =
+        std::find(blockedNodes.begin(), blockedNodes.end(), currentSceneId) != blockedNodes.end();
+
+    std::unordered_set<std::string> drawnTargets;
+    for (const auto& link : sceneLinks) {
+        if (toLowerCopy(link.fromScene) != currentSceneId) continue;
+
+        const Edge* edge = findBestEdgeForLink(graph, currentSceneId, link);
+        const std::string dedupeKey = currentSceneId + "|" + toLowerCopy(link.toScene) + "|" +
+                                      (edge ? edge->type : std::string("link"));
+        if (!drawnTargets.insert(dedupeKey).second) continue;
+
+        const Vector2 targetPos = rectCenter(link.triggerRect);
+        const bool edgeAllowed = edge ? isOverlayEdgeAllowed(*edge, mobilityReduced) : isLinkAllowed(link, mobilityReduced);
+        const bool onActivePath = pathContainsDirectedStep(activePathNodes, currentSceneId, toLowerCopy(link.toScene));
+
+        const Color edgeColor = onActivePath
+            ? Color{70, 210, 255, 255}
+            : (edgeAllowed ? Color{170, 205, 255, 200} : Color{220, 90, 90, 180});
+        DrawLineEx(scenePos, targetPos, onActivePath ? 4.0f : 2.0f, edgeColor);
+        DrawCircleV(targetPos, 6.0f, edgeColor);
+        DrawCircleLines(static_cast<int>(targetPos.x), static_cast<int>(targetPos.y), 6.0f, BLACK);
+
+        if (edge) {
+            const std::string weightLabel = TextFormat("%.1f m", edge->base_weight);
+            const int textX = static_cast<int>((scenePos.x + targetPos.x) * 0.5f);
+            const int textY = static_cast<int>((scenePos.y + targetPos.y) * 0.5f) - 18;
+            DrawRectangle(textX - 4, textY - 2, MeasureText(weightLabel.c_str(), 12) + 8, 16,
+                          Color{0, 0, 0, 175});
+            DrawText(weightLabel.c_str(), textX, textY, 12, Color{255, 245, 200, 240});
+        }
+
+        const std::string sceneLabel = toLowerCopy(link.toScene);
+        DrawText(sceneLabel.c_str(), static_cast<int>(targetPos.x) + 8, static_cast<int>(targetPos.y) - 6,
+                 12, Color{240, 245, 255, 220});
+    }
+
+    for (const auto& zone : interestZones) {
+        if (zone.rects.empty()) continue;
+
+        Vector2 poiPos{0.0f, 0.0f};
+        for (const auto& rect : zone.rects) {
+            poiPos.x += rect.x + rect.width * 0.5f;
+            poiPos.y += rect.y + rect.height * 0.5f;
+        }
+        poiPos.x /= static_cast<float>(zone.rects.size());
+        poiPos.y /= static_cast<float>(zone.rects.size());
+
+        DrawLineEx(scenePos, poiPos, 1.5f, Color{255, 190, 60, 145});
+        DrawCircleV(poiPos, 7.0f, Color{255, 180, 50, 235});
+        DrawCircleLines(static_cast<int>(poiPos.x), static_cast<int>(poiPos.y), 7.0f,
+                        Color{255, 250, 210, 240});
+        DrawText(zone.name.c_str(), static_cast<int>(poiPos.x) + 8, static_cast<int>(poiPos.y) - 8,
+                 12, Color{255, 228, 150, 240});
+    }
+
+    const Color nodeColor = nodeBlocked ? Color{230, 90, 90, 240} : Color{85, 160, 255, 240};
+    DrawCircleV(scenePos, 10.0f, nodeColor);
+    DrawCircleLines(static_cast<int>(scenePos.x), static_cast<int>(scenePos.y), 10.0f, WHITE);
+    DrawText(sceneNode.name.c_str(), static_cast<int>(scenePos.x) + 12, static_cast<int>(scenePos.y) - 10,
+             14, Color{230, 245, 255, 240});
+}
+
+static void renderAcademicRuntimeOverlay(
+    bool& showNavigationGraph,
+    bool& showInterestZones,
+    TabManagerState& tabState,
+    NavigationService& navService,
+    ScenarioManager& scenarioManager,
+    ComplexityAnalyzer& complexityAnalyzer,
+    ResilienceService& resilienceService,
+    const CampusGraph& graph,
+    const std::unordered_map<std::string, SceneData>& sceneDataMap,
+    const std::vector<std::pair<std::string, std::string>>& routeScenes,
+    const std::function<std::string(const std::string&)>& sceneDisplayName,
+    const std::string& currentSceneName,
+    bool routeActive,
+    const std::vector<std::string>& routeScenePlan) {
+    if (!showNavigationGraph) return;
+
+    const auto nodeIds = graph.nodeIds();
+    if (nodeIds.empty()) return;
+
+    if (tabState.startId[0] == '\0') std::snprintf(tabState.startId, sizeof(tabState.startId), "%s", nodeIds.front().c_str());
+    if (tabState.endId[0] == '\0') std::snprintf(tabState.endId, sizeof(tabState.endId), "%s", nodeIds.front().c_str());
+    if (tabState.nodeId[0] == '\0') std::snprintf(tabState.nodeId, sizeof(tabState.nodeId), "%s", nodeIds.front().c_str());
+
+    ImGui::SetNextWindowBgAlpha(0.94f);
+    ImGui::SetNextWindowPos(ImVec2(18.0f, 54.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(620.0f, 640.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Runtime Academico", &showNavigationGraph,
+                      ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::Text("Visualizar Grafo de Navegacion");
+    ImGui::SameLine();
+    ImGui::TextDisabled("(overlay principal)");
+
+    ImGui::Checkbox("Resaltar POIs (TAB)", &showInterestZones);
+    bool mobilityReduced = scenarioManager.isMobilityReduced();
+    if (ImGui::Checkbox("Escenario movilidad reducida", &mobilityReduced)) {
+        scenarioManager.setMobilityReduced(mobilityReduced);
+    }
+
+    int studentProfile = scenarioManager.getStudentType() == StudentType::NEW_STUDENT ? 0 : 1;
+    if (ImGui::RadioButton("Estudiante nuevo", studentProfile == 0)) {
+        scenarioManager.setStudentType(StudentType::NEW_STUDENT);
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Estudiante regular", studentProfile == 1)) {
+        scenarioManager.setStudentType(StudentType::REGULAR_STUDENT);
+    }
+
+    comboSelectNode("Inicio manual DFS/BFS", nodeIds, tabState.startId, sizeof(tabState.startId));
+    comboSelectNode("Destino manual", nodeIds, tabState.endId, sizeof(tabState.endId));
+    comboSelectNode("Nodo para resiliencia", nodeIds, tabState.nodeId, sizeof(tabState.nodeId));
+
+    if (ImGui::Button("Ejecutar DFS", ImVec2(120, 0))) {
+        tabState.lastTraversal = navService.runDfs(tabState.startId, scenarioManager.isMobilityReduced());
+        tabState.hasTraversal = true;
+        tabState.lastAction = "DFS";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Ejecutar BFS", ImVec2(120, 0))) {
+        tabState.lastTraversal = navService.runBfs(tabState.startId, scenarioManager.isMobilityReduced());
+        tabState.hasTraversal = true;
+        tabState.lastAction = "BFS";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Verificar Conexidad", ImVec2(170, 0))) {
+        tabState.lastConnected = navService.checkConnectivity();
+        tabState.lastAction = "Connectivity";
+    }
+
+    if (ImGui::Button("Buscar Camino DFS", ImVec2(170, 0))) {
+        tabState.lastPath = runProfiledDfsPath(graph, navService, scenarioManager,
+                                               tabState.startId, tabState.endId);
+        tabState.hasPath = true;
+        tabState.lastAction = "PathDFS";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Comparar BFS vs DFS", ImVec2(170, 0))) {
+        tabState.lastStats = complexityAnalyzer.analyze(tabState.startId, scenarioManager.isMobilityReduced());
+        tabState.lastComparison = complexityAnalyzer.compareAlgorithms(
+            tabState.startId, tabState.endId, scenarioManager.isMobilityReduced());
+        tabState.hasComparison = true;
+        tabState.lastAction = "Complexity";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Ruta Alterna", ImVec2(120, 0))) {
+        tabState.lastPath = runProfiledAlternatePath(graph, resilienceService, scenarioManager,
+                                                     tabState.startId, tabState.endId);
+        tabState.hasPath = true;
+        tabState.lastAction = "AltPath";
+    }
+
+    if (ImGui::Button("Bloquear Arista", ImVec2(130, 0))) {
+        resilienceService.blockEdge(tabState.startId, tabState.endId);
+        tabState.lastPath = runProfiledAlternatePath(graph, resilienceService, scenarioManager,
+                                                     tabState.startId, tabState.endId);
+        tabState.hasPath = true;
+        tabState.lastAction = "BlockEdge";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Bloquear Nodo", ImVec2(130, 0))) {
+        resilienceService.blockNode(tabState.nodeId);
+        tabState.lastPath = runProfiledAlternatePath(graph, resilienceService, scenarioManager,
+                                                     tabState.startId, tabState.endId);
+        tabState.hasPath = true;
+        tabState.lastAction = "BlockNode";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Desbloquear Todo", ImVec2(140, 0))) {
+        resilienceService.unblockAll();
+        tabState.lastAction = "UnblockAll";
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Panel de explicacion de logica");
+    ImGui::Text("Escena actual: %s", sceneDisplayName(toLowerCopy(currentSceneName)).c_str());
+    ImGui::Text("Perfil activo: %s",
+                scenarioManager.getStudentType() == StudentType::NEW_STUDENT
+                    ? (scenarioManager.isMobilityReduced() ? "Nuevo + Movilidad Reducida" : "Nuevo")
+                    : (scenarioManager.isMobilityReduced() ? "Regular + Movilidad Reducida" : "Regular"));
+    ImGui::TextWrapped("Criterio aplicado: %s",
+                       buildSelectionCriterion(scenarioManager.getStudentType(),
+                                               scenarioManager.isMobilityReduced()).c_str());
+    ImGui::Text("Aristas descartadas por perfil: %d",
+                countProfileDiscardedEdges(graph, scenarioManager.isMobilityReduced()));
+    ImGui::Text("Peso total de ruta calculada: %.2f m",
+                tabState.hasPath ? tabState.lastPath.total_weight : 0.0);
+
+    const auto blockedEdges = resilienceService.getBlockedEdges();
+    const auto blockedNodes = resilienceService.getBlockedNodes();
+    ImGui::TextColored(tabState.lastConnected ? ImVec4(0.35f, 0.95f, 0.45f, 1.0f)
+                                              : ImVec4(0.95f, 0.35f, 0.35f, 1.0f),
+                       "Conectividad global: %s",
+                       resilienceService.isStillConnected() ? "Conectado" : "Fragmentado");
+    ImGui::Text("Nodos bloqueados: %d | Aristas bloqueadas: %d",
+                static_cast<int>(blockedNodes.size()), static_cast<int>(blockedEdges.size()));
+
+    if (tabState.hasTraversal) {
+        ImGui::Text("Ultimo recorrido %s: %d nodos, %lld us",
+                    tabState.lastAction.c_str(), tabState.lastTraversal.nodes_visited,
+                    tabState.lastTraversal.elapsed_us);
+    }
+    if (tabState.hasPath) {
+        ImGui::Text("Ultima ruta %s: %s",
+                    tabState.lastAction.c_str(), tabState.lastPath.found ? "encontrada" : "sin ruta");
+    }
+
+    if (tabState.hasComparison) {
+        ImGui::Separator();
+        ImGui::Text("Analisis comparativo de complejidad");
+        ImGui::Columns(3, "complexity_columns", false);
+        ImGui::Text("Algoritmo"); ImGui::NextColumn();
+        ImGui::Text("Nodos"); ImGui::NextColumn();
+        ImGui::Text("Tiempo (us)"); ImGui::NextColumn();
+        ImGui::Separator();
+        for (const auto& stat : tabState.lastStats) {
+            ImGui::Text("%s", stat.algorithm.c_str()); ImGui::NextColumn();
+            ImGui::Text("%d", stat.nodes_visited); ImGui::NextColumn();
+            ImGui::Text("%lld", stat.elapsed_us); ImGui::NextColumn();
+        }
+        ImGui::Columns(1);
+        ImGui::Text("DFS alcanza destino: %s | BFS alcanza destino: %s",
+                    tabState.lastComparison.dfs_reaches_destination ? "si" : "no",
+                    tabState.lastComparison.bfs_reaches_destination ? "si" : "no");
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Grafo visual y POIs");
+    const ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+    ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+    canvasSize.y = std::max(240.0f, canvasSize.y);
+    ImGui::InvisibleButton("graph_canvas", canvasSize);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    drawList->AddRectFilled(canvasPos, ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
+                            IM_COL32(12, 20, 34, 210), 8.0f);
+    drawList->AddRect(canvasPos, ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
+                      IM_COL32(90, 130, 190, 220), 8.0f);
+
+    std::unordered_map<std::string, std::vector<VisualPoiNode>> poisByScene;
+    for (const auto& poi : collectVisualPoiNodes(sceneDataMap)) {
+        poisByScene[poi.sceneId].push_back(poi);
+    }
+
+    std::vector<std::string> orderedScenes;
+    orderedScenes.reserve(routeScenes.size());
+    for (const auto& [sceneId, _] : routeScenes) {
+        if (graph.hasNode(sceneId)) orderedScenes.push_back(sceneId);
+    }
+    if (orderedScenes.empty()) orderedScenes = nodeIds;
+
+    const int columns = 3;
+    const int rows = std::max(1, static_cast<int>((orderedScenes.size() + columns - 1) / columns));
+    const float cellW = canvasSize.x / static_cast<float>(columns);
+    const float cellH = canvasSize.y / static_cast<float>(rows);
+
+    std::unordered_map<std::string, ImVec2> nodeScreenPositions;
+    for (size_t i = 0; i < orderedScenes.size(); ++i) {
+        const int col = static_cast<int>(i % columns);
+        const int row = static_cast<int>(i / columns);
+        const std::string& sceneId = orderedScenes[i];
+
+        const ImVec2 cellMin{canvasPos.x + col * cellW, canvasPos.y + row * cellH};
+        const ImVec2 cellMax{cellMin.x + cellW, cellMin.y + cellH};
+        drawList->AddRect(cellMin, cellMax, IM_COL32(45, 70, 105, 160));
+        drawList->AddText(ImVec2(cellMin.x + 8.0f, cellMin.y + 6.0f), IM_COL32(220, 235, 255, 255),
+                          sceneDisplayName(sceneId).c_str());
+
+        const ImVec2 nodePos{cellMin.x + cellW * 0.5f, cellMin.y + 34.0f};
+        nodeScreenPositions[sceneId] = nodePos;
+        const bool isCurrentScene = sceneId == toLowerCopy(currentSceneName);
+        const bool isBlockedScene =
+            std::find(blockedNodes.begin(), blockedNodes.end(), sceneId) != blockedNodes.end();
+        const ImU32 nodeColor = isBlockedScene ? IM_COL32(220, 90, 90, 255)
+            : (isCurrentScene ? IM_COL32(50, 210, 255, 255) : IM_COL32(90, 155, 255, 255));
+        drawList->AddCircleFilled(nodePos, 8.0f, nodeColor);
+        drawList->AddCircle(nodePos, 8.0f, IM_COL32(245, 250, 255, 255), 0, 2.0f);
+        drawList->AddText(ImVec2(nodePos.x + 10.0f, nodePos.y - 7.0f), IM_COL32(235, 240, 255, 255),
+                          graph.getNode(sceneId).name.c_str());
+
+        const auto poiIt = poisByScene.find(sceneId);
+        if (poiIt != poisByScene.end()) {
+            for (size_t p = 0; p < poiIt->second.size(); ++p) {
+                const ImVec2 poiPos{cellMin.x + 26.0f + static_cast<float>((p % 2) * ((cellW - 52.0f) * 0.52f)),
+                                    nodePos.y + 34.0f + static_cast<float>(p / 2) * 26.0f};
+                drawList->AddLine(nodePos, poiPos, IM_COL32(255, 190, 60, 120), 1.0f);
+                drawList->AddCircleFilled(poiPos, 5.5f, IM_COL32(255, 180, 45, 255));
+                const std::string poiLabel = poiIt->second[p].label + " [" + sceneDisplayName(sceneId) + "]";
+                drawList->AddText(ImVec2(poiPos.x + 8.0f, poiPos.y - 6.0f), IM_COL32(255, 225, 150, 255),
+                                  poiLabel.c_str());
+            }
+        }
+    }
+
+    std::unordered_set<std::string> drawnEdges;
+    const std::vector<std::string> highlightedPath = routeActive && !routeScenePlan.empty()
+        ? routeScenePlan
+        : (tabState.hasPath ? tabState.lastPath.path : std::vector<std::string>{});
+    for (const auto& from : nodeIds) {
+        for (const auto& edge : graph.edgesFrom(from)) {
+            const std::string a = (edge.from < edge.to) ? edge.from : edge.to;
+            const std::string b = (edge.from < edge.to) ? edge.to : edge.from;
+            const std::string key = a + "|" + b + "|" + edge.type;
+            if (!drawnEdges.insert(key).second) continue;
+            if (!nodeScreenPositions.count(edge.from) || !nodeScreenPositions.count(edge.to)) continue;
+
+            const bool edgeAllowed = isOverlayEdgeAllowed(edge, scenarioManager.isMobilityReduced());
+            const bool onActivePath = pathContainsDirectedStep(highlightedPath, edge.from, edge.to) ||
+                                      pathContainsDirectedStep(highlightedPath, edge.to, edge.from);
+            const ImU32 edgeColor = onActivePath ? IM_COL32(60, 220, 255, 255)
+                : (edgeAllowed ? IM_COL32(175, 200, 235, 190) : IM_COL32(210, 90, 90, 180));
+            const float thickness = onActivePath ? 3.0f : 1.7f;
+            const ImVec2 pa = nodeScreenPositions[edge.from];
+            const ImVec2 pb = nodeScreenPositions[edge.to];
+            drawList->AddLine(pa, pb, edgeColor, thickness);
+
+            const ImVec2 mid{(pa.x + pb.x) * 0.5f, (pa.y + pb.y) * 0.5f};
+            const std::string edgeLabel = TextFormat("%.1f m", edge.base_weight);
+            drawList->AddRectFilled(ImVec2(mid.x - 22.0f, mid.y - 10.0f),
+                                    ImVec2(mid.x + 22.0f, mid.y + 8.0f),
+                                    IM_COL32(0, 0, 0, 170), 4.0f);
+            drawList->AddText(ImVec2(mid.x - 18.0f, mid.y - 8.0f), IM_COL32(255, 245, 200, 255),
+                              edgeLabel.c_str());
+        }
+    }
+
+    ImGui::End();
 }
 
 static void clampCameraTarget(Camera2D& camera, const MapRenderData& mapData, int screenWidth, int screenHeight) {
@@ -628,6 +1194,7 @@ static void drawRaylibInfoMenu(
     int& graphPage,
     int& dfsPage,
     int& bfsPage,
+    bool& showNavigationGraph,
     const TabManagerState& state,
     const std::string& currentSceneName,
     bool showHitboxes,
@@ -777,6 +1344,16 @@ static void drawRaylibInfoMenu(
     DrawText(TextFormat("Reduced mobility: %s", mobilityReduced ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(22);
     DrawText(TextFormat("Student profile: %s", studentType == StudentType::NEW_STUDENT ? "New" : "Regular"),
              rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(26);
+
+    Rectangle graphToggleBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
+                             static_cast<float>(px(290)), static_cast<float>(buttonHeight)};
+    if (drawRayButton(graphToggleBtn,
+                      showNavigationGraph ? "Visualizar Grafo de Navegacion: ON"
+                                          : "Visualizar Grafo de Navegacion: OFF",
+                      bodyFont, btn, btnHover, btnActive, white)) {
+        showNavigationGraph = !showNavigationGraph;
+    }
+    yRight += px(46);
 
     const std::string academicOrigin = sceneDisplayName(currentSceneName);
     const std::string academicDestination = (routeActive && !routeTargetScene.empty())
@@ -1232,6 +1809,9 @@ int main(int argc, char* argv[]) {
     int dfsViewPage = 0;
     int bfsViewPage = 0;
     float traversalRefreshCooldown = 0.0f;
+    bool showNavigationGraph = false;
+    std::vector<Vector2> dfsOverlayPathPoints;
+    std::vector<Vector2> alternateOverlayPathPoints;
     {
         const std::string traversalStart = canonicalSceneId(currentSceneName);
         dfsTraversalView = nav_service.runDfs(traversalStart, scenario_manager.isMobilityReduced());
@@ -1242,6 +1822,9 @@ int main(int argc, char* argv[]) {
         const float dt = GetFrameTime();
         if (IsKeyPressed(KEY_M)) {
             infoMenuOpen = !infoMenuOpen;
+        }
+        if (IsKeyPressed(KEY_TAB)) {
+            showInterestZones = !showInterestZones;
         }
 
         const float wheel = GetMouseWheelMove();
@@ -1408,6 +1991,28 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        if (showNavigationGraph) {
+            const std::vector<std::string> dfsOverlayNodes =
+                (tabState.hasPath && tabState.lastAction == "PathDFS") ? tabState.lastPath.path
+                                                                       : std::vector<std::string>{};
+            dfsOverlayPathPoints = buildOverlayPathForScene(
+                currentSceneName, dfsOverlayNodes, sceneLinks, mapData, playerPos,
+                scenario_manager.isMobilityReduced(), sceneTargetPoint);
+
+            const std::vector<std::string> alternateOverlayNodes =
+                (tabState.hasPath &&
+                 (tabState.lastAction == "AltPath" || tabState.lastAction == "BlockEdge" ||
+                  tabState.lastAction == "BlockNode"))
+                    ? tabState.lastPath.path
+                    : std::vector<std::string>{};
+            alternateOverlayPathPoints = buildOverlayPathForScene(
+                currentSceneName, alternateOverlayNodes, sceneLinks, mapData, playerPos,
+                scenario_manager.isMobilityReduced(), sceneTargetPoint);
+        } else {
+            dfsOverlayPathPoints.clear();
+            alternateOverlayPathPoints.clear();
+        }
+
         traversalRefreshCooldown -= dt;
         if (infoMenuOpen && traversalRefreshCooldown <= 0.0f) {
             const std::string traversalStart = canonicalSceneId(currentSceneName);
@@ -1477,6 +2082,41 @@ int main(int argc, char* argv[]) {
 
         if (showInterestZones && mapData.hasTexture) {
             drawInterestZones(mapData.interestZones);
+        }
+
+        if (showNavigationGraph && mapData.hasTexture) {
+            const std::vector<std::string> highlightedPathNodes =
+                routeActive && !routeScenePlan.empty() ? routeScenePlan
+                                                       : (tabState.hasPath ? tabState.lastPath.path
+                                                                           : std::vector<std::string>{});
+            drawCurrentSceneNavigationOverlay(
+                graph,
+                currentSceneName,
+                sceneLinks,
+                mapData.interestZones,
+                highlightedPathNodes,
+                resilience_service.getBlockedNodes(),
+                scenario_manager.isMobilityReduced());
+
+            if (routePathScene == currentSceneName && routePathPoints.size() >= 2) {
+                const float pulse = 2.8f + std::sin(static_cast<float>(GetTime()) * 3.0f) * 0.8f;
+                for (size_t i = 1; i < routePathPoints.size(); ++i) {
+                    DrawLineEx(routePathPoints[i - 1], routePathPoints[i], pulse,
+                               Color{255, 210, 70, 235});
+                }
+            }
+            if (dfsOverlayPathPoints.size() >= 2) {
+                for (size_t i = 1; i < dfsOverlayPathPoints.size(); ++i) {
+                    DrawLineEx(dfsOverlayPathPoints[i - 1], dfsOverlayPathPoints[i], 3.0f,
+                               Color{70, 255, 160, 220});
+                }
+            }
+            if (alternateOverlayPathPoints.size() >= 2) {
+                for (size_t i = 1; i < alternateOverlayPathPoints.size(); ++i) {
+                    DrawLineEx(alternateOverlayPathPoints[i - 1], alternateOverlayPathPoints[i], 3.0f,
+                               Color{255, 120, 120, 220});
+                }
+            }
         }
 
         // Debug: draw portal trigger zones as green semi-transparent rectangles
@@ -1638,6 +2278,7 @@ int main(int argc, char* argv[]) {
         DrawRectangle(coordX - 8, coordY - 6, coordWidth + 16, coordFontSize + 12, Color{0, 0, 0, 140});
         DrawText(coordText, coordX, coordY, coordFontSize, RAYWHITE);
         DrawText("M: Menu", 16, 12, 20, Color{220, 230, 255, 220});
+        DrawText("TAB: POIs", 16, 34, 18, Color{255, 215, 120, 220});
 
         drawRaylibInfoMenu(
             infoMenuOpen,
@@ -1665,6 +2306,7 @@ int main(int argc, char* argv[]) {
             graphViewPage,
             dfsViewPage,
             bfsViewPage,
+            showNavigationGraph,
             tabState,
             currentSceneName,
             showHitboxes,
@@ -1676,6 +2318,22 @@ int main(int argc, char* argv[]) {
             resilience_service.isStillConnected());
 
         rlImGuiBegin();
+
+        renderAcademicRuntimeOverlay(
+            showNavigationGraph,
+            showInterestZones,
+            tabState,
+            nav_service,
+            scenario_manager,
+            complexity_analyzer,
+            resilience_service,
+            graph,
+            sceneDataMap,
+            routeScenes,
+            sceneDisplayName,
+            currentSceneName,
+            routeActive,
+            routeScenePlan);
 
         // Floor-elevator menu (shown when player presses E near an elevator)
         if (!infoMenuOpen) {
