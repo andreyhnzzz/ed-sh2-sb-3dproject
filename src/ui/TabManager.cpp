@@ -229,11 +229,14 @@ static void renderAcademicControlPanelContent(
     const CampusGraph& graph,
     const std::string& currentSceneName,
     bool& showHitboxes,
-    bool& showTriggers) {
+    bool& showTriggers,
+    bool& showInterestZones) {
     ImGui::Text("Current scene: %s", currentSceneName.c_str());
     ImGui::Checkbox("Hitboxes", &showHitboxes);
     ImGui::SameLine();
     ImGui::Checkbox("Triggers", &showTriggers);
+    ImGui::SameLine();
+    ImGui::Checkbox("Interes", &showInterestZones);
     ImGui::Separator();
 
     bool mobilityReduced = scenarioManager.isMobilityReduced();
@@ -407,13 +410,14 @@ void renderAcademicControlPanel(
     const CampusGraph& graph,
     const std::string& currentSceneName,
     bool& showHitboxes,
-    bool& showTriggers) {
+    bool& showTriggers,
+    bool& showInterestZones) {
     ImGui::SetNextWindowSize(ImVec2(430, 510), ImGuiCond_FirstUseEver);
     ImGui::Begin("Academic Control");
 
     renderAcademicControlPanelContent(state, navService, scenarioManager, complexityAnalyzer,
                                       resilienceService, graph, currentSceneName,
-                                      showHitboxes, showTriggers);
+                                      showHitboxes, showTriggers, showInterestZones);
 
     ImGui::End();
 }
@@ -439,7 +443,8 @@ void renderFullScreenInfoMenu(
     const CampusGraph& graph,
     const std::string& currentSceneName,
     bool& showHitboxes,
-    bool& showTriggers) {
+    bool& showTriggers,
+    bool& showInterestZones) {
     if (!isOpen) return;
 
     // 1) Nearly-solid panel backgrounds
@@ -500,7 +505,7 @@ void renderFullScreenInfoMenu(
     ImGui::Separator();
     renderAcademicControlPanelContent(state, navService, scenarioManager, complexityAnalyzer,
                                       resilienceService, graph, currentSceneName,
-                                      showHitboxes, showTriggers);
+                                      showHitboxes, showTriggers, showInterestZones);
     ImGui::EndChild();
 
     ImGui::End();

@@ -1,0 +1,77 @@
+{
+  "scenes": {
+    "paradadebus": [
+      {
+        "name": "Estacionamiento",
+        "rects": [{ "x": 606, "y": 270, "w": 560, "h": 320 }]
+      }
+    ],
+    "piso4": [
+      {
+        "name": "Aulas 4 piso",
+        "rects": [{ "x": 4, "y": 258, "w": 440, "h": 267 }]
+      },
+      {
+        "name": "Oficinas 4 piso",
+        "rects": [{ "x": 748, "y": 260, "w": 288, "h": 268 }]
+      }
+    ],
+    "piso3": [
+      {
+        "name": "Aulas 3 piso",
+        "rects": [
+          { "x": 2, "y": 306, "w": 442, "h": 219 },
+          { "x": 672, "y": 306, "w": 350, "h": 220 }
+        ]
+      },
+      {
+        "name": "Banos 3 piso",
+        "rects": [{ "x": 449, "y": 306, "w": 214, "h": 224 }]
+      },
+      {
+        "name": "Zona recreativa 3 piso",
+        "rects": [{ "x": 333, "y": 191, "w": 146, "h": 74 }]
+      }
+    ],
+    "piso5": [
+      {
+        "name": "Aulas 5 piso",
+        "rects": [
+          { "x": 16, "y": 305, "w": 421, "h": 221 },
+          { "x": 672, "y": 307, "w": 352, "h": 219 }
+        ]
+      },
+      {
+        "name": "Banos 5 piso",
+        "rects": [{ "x": 447, "y": 306, "w": 217, "h": 221 }]
+      }
+    ],
+    "piso2": [
+      {
+        "name": "Aulas 2 piso",
+        "rects": [{ "x": 16, "y": 307, "w": 423, "h": 219 }]
+      },
+      {
+        "name": "Auditorio 2 piso",
+        "rects": [{ "x": 672, "y": 307, "w": 350, "h": 227 }]
+      },
+      {
+        "name": "Banos 2 piso",
+        "rects": [{ "x": 448, "y": 306, "w": 215, "h": 219 }]
+      }
+    ],
+    "piso1": [
+      {
+        "name": "Aulas 1 piso",
+        "rects": [
+          { "x": 16, "y": 306, "w": 424, "h": 220 },
+          { "x": 672, "y": 305, "w": 368, "h": 222 }
+        ]
+      },
+      {
+        "name": "Zona recreativa 1 piso",
+        "rects": [{ "x": 448, "y": 383, "w": 207, "h": 143 }]
+      }
+    ]
+  }
+}

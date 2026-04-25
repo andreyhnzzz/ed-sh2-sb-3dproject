@@ -28,15 +28,22 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
+struct InterestZone {
+    std::string name;
+    std::vector<Rectangle> rects;
+};
+
 struct MapRenderData {
     Texture2D texture{};
     bool hasTexture{false};
     std::vector<Rectangle> hitboxes;
+    std::vector<InterestZone> interestZones;
 };
 
 struct SceneData {
     Texture2D texture{};
     std::vector<Rectangle> hitboxes;
+    std::vector<InterestZone> interestZones;
     bool isValid{false};
 };
 
@@ -76,6 +83,65 @@ struct SceneLink {
     Vector2 arrivalSpawn{0.0f, 0.0f};
     SceneLinkType type{SceneLinkType::Portal};
 };
+
+static std::string toLowerCopy(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return s;
+}
+
+static std::unordered_map<std::string, std::vector<InterestZone>>
+loadInterestZonesJson(const std::string& jsonPath) {
+    std::unordered_map<std::string, std::vector<InterestZone>> zonesByScene;
+    if (jsonPath.empty()) return zonesByScene;
+
+    std::ifstream input(jsonPath);
+    if (!input.is_open()) {
+        std::cerr << "[InterestZones] Cannot open: " << jsonPath << "\n";
+        return zonesByScene;
+    }
+
+    json data;
+    try {
+        input >> data;
+    } catch (const std::exception& ex) {
+        std::cerr << "[InterestZones] Parse error: " << ex.what() << "\n";
+        return zonesByScene;
+    }
+
+    if (!data.contains("scenes") || !data["scenes"].is_object()) return zonesByScene;
+
+    for (auto it = data["scenes"].begin(); it != data["scenes"].end(); ++it) {
+        const std::string sceneId = toLowerCopy(it.key());
+        if (!it.value().is_array()) continue;
+
+        for (const auto& zoneJson : it.value()) {
+            if (!zoneJson.contains("name") || !zoneJson.contains("rects")) continue;
+
+            InterestZone zone;
+            zone.name = zoneJson.value("name", "");
+            if (!zoneJson["rects"].is_array()) continue;
+
+            for (const auto& rj : zoneJson["rects"]) {
+                if (!rj.contains("x") || !rj.contains("y") ||
+                    !rj.contains("w") || !rj.contains("h")) {
+                    continue;
+                }
+                Rectangle r{};
+                r.x = rj["x"].get<float>();
+                r.y = rj["y"].get<float>();
+                r.width = rj["w"].get<float>();
+                r.height = rj["h"].get<float>();
+                zone.rects.push_back(r);
+            }
+
+            if (!zone.rects.empty()) zonesByScene[sceneId].push_back(std::move(zone));
+        }
+    }
+
+    return zonesByScene;
+}
 
 static int directionStartFrame(int direction, int totalFrames) {
     if (totalFrames < 4) return 0;
@@ -477,6 +543,29 @@ static void drawMapWithHitboxes(const MapRenderData& mapData, bool showHitboxes)
     }
 }
 
+static void drawInterestZones(const std::vector<InterestZone>& zones) {
+    const Color fill = Color{255, 200, 60, 60};
+    const Color border = Color{255, 180, 40, 200};
+    const Color labelBg = Color{20, 20, 20, 200};
+    const Color labelFg = Color{255, 230, 160, 230};
+    const int fontSize = 14;
+
+    for (const auto& zone : zones) {
+        for (const auto& r : zone.rects) {
+            DrawRectangleRec(r, fill);
+            DrawRectangleLinesEx(r, 2.0f, border);
+        }
+        if (!zone.rects.empty() && !zone.name.empty()) {
+            const auto& r0 = zone.rects.front();
+            const int textW = MeasureText(zone.name.c_str(), fontSize);
+            const int textX = static_cast<int>(r0.x) + 6;
+            const int textY = static_cast<int>(r0.y) + 6;
+            DrawRectangle(textX - 4, textY - 3, textW + 8, fontSize + 6, labelBg);
+            DrawText(zone.name.c_str(), textX, textY, fontSize, labelFg);
+        }
+    }
+}
+
 static void clampCameraTarget(Camera2D& camera, const MapRenderData& mapData, int screenWidth, int screenHeight) {
     if (!mapData.hasTexture) return;
     const float halfViewWidth = (static_cast<float>(screenWidth) * 0.5f) / camera.zoom;
@@ -543,6 +632,7 @@ static void drawRaylibInfoMenu(
     const std::string& currentSceneName,
     bool showHitboxes,
     bool showTriggers,
+    bool showInterestZones,
     bool mobilityReduced,
     StudentType studentType,
     const std::vector<std::string>& blockedNodes,
@@ -683,6 +773,7 @@ static void drawRaylibInfoMenu(
     DrawText(TextFormat("Current scene: %s", currentSceneName.c_str()), rightX + sectionPad, yRight, bodyFont, white); yRight += px(24);
     DrawText(TextFormat("Hitboxes: %s", showHitboxes ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(22);
     DrawText(TextFormat("Triggers: %s", showTriggers ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(22);
+    DrawText(TextFormat("Interest zones: %s", showInterestZones ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(22);
     DrawText(TextFormat("Reduced mobility: %s", mobilityReduced ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(22);
     DrawText(TextFormat("Student profile: %s", studentType == StudentType::NEW_STUDENT ? "New" : "Regular"),
              rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(26);
@@ -834,6 +925,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    const std::string interestZonesPath =
+        resolveAssetPath(argc > 0 ? argv[0] : nullptr, "assets/interest_zones.json");
+    const auto interestZonesByScene = loadInterestZonesJson(interestZonesPath);
+
     DataManager dataManager;
     CampusGraph graph;
     try {
@@ -859,6 +954,7 @@ int main(int argc, char* argv[]) {
 
     for (const auto& sc : allScenes) {
         SceneData sd;
+        const std::string sceneKey = toLowerCopy(sc.name);
         const std::string tmjPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, sc.tmjPath);
         if (!tmjPath.empty()) {
             try {
@@ -871,6 +967,10 @@ int main(int argc, char* argv[]) {
             }
         } else {
             std::cerr << "Could not find " << sc.tmjPath << "\n";
+        }
+        const auto zoneIt = interestZonesByScene.find(sceneKey);
+        if (zoneIt != interestZonesByScene.end()) {
+            sd.interestZones = zoneIt->second;
         }
         sceneDataMap[sc.name] = std::move(sd);
     }
@@ -1037,6 +1137,7 @@ int main(int argc, char* argv[]) {
     MapRenderData mapData;
     bool showHitboxes = false;
     bool showTriggers = false;
+    bool showInterestZones = true;
     {
         const auto& initConfig = sceneMap.at(initialSceneName);
         const std::string pngPath = resolveAssetPath(argc > 0 ? argv[0] : nullptr, initConfig.pngPath);
@@ -1049,6 +1150,7 @@ int main(int argc, char* argv[]) {
         const auto sdIt = sceneDataMap.find(initialSceneName);
         if (sdIt != sceneDataMap.end() && sdIt->second.isValid) {
             mapData.hitboxes = sdIt->second.hitboxes;
+            mapData.interestZones = sdIt->second.interestZones;
         }
     }
 
@@ -1328,6 +1430,7 @@ int main(int argc, char* argv[]) {
                 mapData.hasTexture = false;
             }
             mapData.hitboxes.clear();
+            mapData.interestZones.clear();
 
             const auto scIt = sceneMap.find(req.targetScene);
             if (scIt != sceneMap.end()) {
@@ -1339,6 +1442,7 @@ int main(int argc, char* argv[]) {
                 const auto sdIt = sceneDataMap.find(req.targetScene);
                 if (sdIt != sceneDataMap.end() && sdIt->second.isValid) {
                     mapData.hitboxes = sdIt->second.hitboxes;
+                    mapData.interestZones = sdIt->second.interestZones;
                 }
                 currentSceneName = req.targetScene;
             }
@@ -1369,6 +1473,10 @@ int main(int argc, char* argv[]) {
             drawMapWithHitboxes(mapData, showHitboxes);
         } else {
             DrawRectangle(0, 0, screenWidth, screenHeight, {22, 26, 36, 255});
+        }
+
+        if (showInterestZones && mapData.hasTexture) {
+            drawInterestZones(mapData.interestZones);
         }
 
         // Debug: draw portal trigger zones as green semi-transparent rectangles
@@ -1561,6 +1669,7 @@ int main(int argc, char* argv[]) {
             currentSceneName,
             showHitboxes,
             showTriggers,
+            showInterestZones,
             scenario_manager.isMobilityReduced(),
             scenario_manager.getStudentType(),
             resilience_service.getBlockedNodes(),

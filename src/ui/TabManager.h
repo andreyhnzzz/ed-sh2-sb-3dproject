@@ -64,7 +64,8 @@ void renderAcademicControlPanel(
     const CampusGraph& graph,
     const std::string& currentSceneName,
     bool& showHitboxes,
-    bool& showTriggers);
+    bool& showTriggers,
+    bool& showInterestZones);
 
 void renderFullScreenInfoMenu(
     bool& isOpen,
@@ -87,4 +88,5 @@ void renderFullScreenInfoMenu(
     const CampusGraph& graph,
     const std::string& currentSceneName,
     bool& showHitboxes,
-    bool& showTriggers);
+    bool& showTriggers,
+    bool& showInterestZones);
