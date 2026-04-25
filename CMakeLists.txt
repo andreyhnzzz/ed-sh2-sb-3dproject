@@ -108,6 +108,10 @@ set(SOURCES
         src/services/MapRenderService.cpp
         src/services/DestinationCatalog.cpp
         src/services/RuntimeBlockerService.cpp
+        src/runtime/InputManager.cpp
+        src/runtime/GameController.cpp
+        src/runtime/SceneManager.cpp
+        src/runtime/UIManager.cpp
         src/runtime/RuntimeInputManager.cpp
         src/runtime/RuntimeNavigationManager.cpp
         src/ui/TabManager.cpp
