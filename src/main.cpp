@@ -35,6 +35,11 @@
 #include "core/runtime/SceneRuntimeTypes.h"
 #include "runtime/RuntimeInputManager.h"
 #include "runtime/RuntimeNavigationManager.h"
+#include "runtime/RuntimeCameraManager.h"
+#include "runtime/RuntimePlayerManager.h"
+#include "runtime/RuntimeMinimapManager.h"
+#include "runtime/RuntimeUiManager.h"
+#include "runtime/RuntimeTransitionManager.h"
 #include "ui/TabManager.h"
 
 namespace fs = std::filesystem;
