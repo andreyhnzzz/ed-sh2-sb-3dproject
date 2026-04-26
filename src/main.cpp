@@ -1,5 +1,4 @@
 #include <raylib.h>
-#include "rlImGui.h"
 
 #include <filesystem>
 #include <iostream>
@@ -13,6 +12,8 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include "core/application/AudioInitializer.h"
+#include "core/application/WindowInitializer.h"
 #include "core/runtime/SceneRuntimeTypes.h"
 #include "runtime/GameController.h"
 #include "runtime/InputManager.h"
@@ -38,6 +39,7 @@
 #include "services/TmjLoader.h"
 #include "services/TransitionService.h"
 #include "services/WalkablePathService.h"
+#include "services/initialization/FloorLinkLoader.h"
 #include "ui/TabManager.h"
 
 namespace fs = std::filesystem;
@@ -51,42 +53,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    int screenWidth = 1280;
-    int screenHeight = 720;
-    InitWindow(screenWidth, screenHeight, "EcoCampusNav (Raylib)");
-    const int monitor = GetCurrentMonitor();
-    screenWidth = GetMonitorWidth(monitor);
-    screenHeight = GetMonitorHeight(monitor);
-    SetWindowSize(screenWidth, screenHeight);
-    ToggleFullscreen();
-    SetTargetFPS(60);
-    rlImGuiSetup(true);
-    AudioManager::getInstance().initialize();
+    WindowConfig windowConfig;
+    WindowInitializer::initialize(windowConfig);
+    int screenWidth = windowConfig.width;
+    int screenHeight = windowConfig.height;
+    AudioInitializer::initialize();
 
     MusicService musicService;
     SoundEffectService soundEffectService;
-    musicService.loadMusic("main_menu", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "main_menu.mp3"));
-    musicService.loadMusic("eternal_moment", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "eternal_moment.mp3"));
-    musicService.loadMusic("quiet_day", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "quiet_day.mp3"));
-    musicService.loadMusic("the_place", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "the_place.mp3"));
-    musicService.loadMusic("your_memory", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "your_memory.mp3"));
-    musicService.setMainMenuMusic("main_menu");
-    musicService.addGameMusic("eternal_moment");
-    musicService.addGameMusic("quiet_day");
-    musicService.addGameMusic("the_place");
-    musicService.addGameMusic("your_memory");
-    musicService.playMainMenuMusic();
-
-    soundEffectService.loadSound(SoundEffectType::BetweenOptions,
-                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "between_options.mp3"));
-    soundEffectService.loadSound(SoundEffectType::DestinationReached,
-                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "destination_reached.mp3"));
-    soundEffectService.loadSound(SoundEffectType::RouteFixated,
-                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "route_fixated.mp3"));
-    soundEffectService.loadSound(SoundEffectType::WallBump,
-                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "wall_bump.mp3"));
-    soundEffectService.loadSound(SoundEffectType::SelectButton,
-                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "select_button.mp3"));
+    AudioInitializer::loadMusicAssets(musicService, argc > 0 ? argv[0] : nullptr);
+    AudioInitializer::loadSoundEffects(soundEffectService, argc > 0 ? argv[0] : nullptr);
 
     const std::vector<SceneConfig> allScenes = {
         {"Exteriorcafeteria", "assets/maps/Exteriorcafeteria.png", "assets/maps/Exteriorcafeteria.tmj"},
@@ -269,60 +245,9 @@ int main(int argc, char* argv[]) {
         return spawnMap.begin()->second;
     };
 
-    for (const auto& [sceneName, _] : floorScenes) {
-        const auto triggerIt = allFloorTriggers.find(sceneName);
-        if (triggerIt == allFloorTriggers.end()) continue;
-
-        for (const auto& trigger : triggerIt->second) {
-            std::string destSpawnId;
-            SceneLinkType linkType = SceneLinkType::Portal;
-            if (trigger.triggerType == "elevator") destSpawnId = "elevator_arrive";
-            else if (trigger.triggerType == "stair_left") destSpawnId = "stair_left_arrive";
-            else if (trigger.triggerType == "stair_right") destSpawnId = "stair_right_arrive";
-            else continue;
-
-            if (trigger.triggerType == "elevator") linkType = SceneLinkType::Elevator;
-            else if (trigger.triggerType == "stair_left") linkType = SceneLinkType::StairLeft;
-            else if (trigger.triggerType == "stair_right") linkType = SceneLinkType::StairRight;
-
-            FloorElevator elevator;
-            elevator.id = trigger.triggerType + "_" + sceneName;
-            elevator.scene = sceneName;
-            elevator.triggerRect = trigger.triggerRect;
-            if (linkType == SceneLinkType::Elevator) elevator.interactionLabel = "elevator";
-            else if (linkType == SceneLinkType::StairLeft) elevator.interactionLabel = "left stair";
-            else if (linkType == SceneLinkType::StairRight) elevator.interactionLabel = "right stair";
-
-            for (const auto& [dstScene, dstLabel] : floorScenes) {
-                const auto dstSpawnMapIt = allSceneSpawns.find(dstScene);
-                if (dstSpawnMapIt == allSceneSpawns.end()) continue;
-                const auto spawnPosIt = dstSpawnMapIt->second.find(destSpawnId);
-                if (spawnPosIt == dstSpawnMapIt->second.end()) continue;
-
-                elevator.floors.push_back({dstScene, spawnPosIt->second, dstLabel});
-                if (dstScene == sceneName) continue;
-
-                std::string accessLabel = "Access";
-                if (linkType == SceneLinkType::Elevator) accessLabel = "Elevator";
-                if (linkType == SceneLinkType::StairLeft) accessLabel = "Left stair";
-                if (linkType == SceneLinkType::StairRight) accessLabel = "Right stair";
-
-                sceneLinks.push_back({
-                    elevator.id + "_" + dstScene,
-                    sceneName,
-                    dstScene,
-                    accessLabel,
-                    elevator.triggerRect,
-                    spawnPosIt->second,
-                    linkType
-                });
-            }
-
-            if (!elevator.floors.empty()) {
-                transitions.addFloorElevator(elevator);
-            }
-        }
-    }
+    const auto floorLinks = FloorLinkLoader::loadFloorLinks(
+        transitions, floorScenes, allSceneSpawns, allFloorTriggers);
+    sceneLinks.insert(sceneLinks.end(), floorLinks.begin(), floorLinks.end());
 
     RuntimeBlockerService runtimeBlockerService;
     runtimeBlockerService.rebuildOptions(graph, destinationCatalog, sceneLinks);
@@ -990,7 +915,6 @@ int main(int argc, char* argv[]) {
     musicService.unloadAll();
     soundEffectService.unloadAll();
     AudioManager::getInstance().shutdown();
-    rlImGuiShutdown();
-    CloseWindow();
+    WindowInitializer::cleanup();
     return 0;
 }

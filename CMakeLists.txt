@@ -88,6 +88,8 @@ endif()
 # ============================================================================
 set(SOURCES
         src/main.cpp
+        src/core/application/WindowInitializer.cpp
+        src/core/application/AudioInitializer.cpp
         src/core/graph/CampusGraph.cpp
         src/core/graph/Algorithms.cpp
         src/repositories/JsonGraphRepository.cpp
@@ -112,6 +114,7 @@ set(SOURCES
         src/services/DestinationCatalog.cpp
         src/services/RuntimeBlockerService.cpp
         src/services/IntroTourConfigLoader.cpp
+        src/services/initialization/FloorLinkLoader.cpp
         src/runtime/InputManager.cpp
         src/runtime/GameController.cpp
         src/runtime/SceneManager.cpp
