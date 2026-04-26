@@ -1,117 +1,78 @@
 # EcoCampusNav
 
-EcoCampusNav es un proyecto en C++17 orientado a simulacion de navegacion en campus.
-Actualmente el proyecto esta en una etapa de juego 2D top-down con `raylib`, usando mapas
-de Tiled (`.tmj`) y sprites animados, mientras conserva la capa de logica de grafos para
-DFS, BFS, conectividad, rutas y resiliencia.
+Sistema de navegacion inteligente para campus universitario implementado en C++17 con `raylib` + `rlImGui`.
 
-## Estado actual del proyecto
+## Caracteristicas principales
 
-El runtime principal esta en `src/main.cpp` y hoy incluye:
+- Menu academico con 8 pestanas activado con `M`
+- Comparacion BFS vs DFS con nodos visitados y tiempo en microsegundos
+- Busqueda de rutas perfiladas y rutas DFS
+- Simulacion de bloqueos de nodos y conexiones
+- Recalculo de rutas en tiempo real
+- Perfiles de estudiante: nuevo, veterano y discapacitado
+- Visualizacion del grafo sobre el mapa del campus
 
-- Render de mapa `Paradadebus.png` (escenario top-down)
-- Carga de hitboxes desde `Paradadebus.tmj` (layer `Hitboxes`)
-- Personaje con sprites `idle/walk` y animacion por direccion
-- Movimiento con `W/A/S/D`
-- Sprint con `Shift`
-- Camara `Camera2D` con seguimiento al personaje y zoom con rueda
-- HUD con coordenadas del personaje (esquina superior derecha)
-- Panel de control con operaciones del grafo (DFS, BFS, camino, conectividad, etc.)
-
-## Arquitectura del codigo
-
-La estructura sigue separada por capas:
-
-- `src/core/graph/`
-  - `CampusGraph`, `Node`, `Edge`, `Algorithms`
-- `src/repositories/`
-  - `JsonGraphRepository` (carga de `campus.json`)
-- `src/services/`
-  - `NavigationService`
-  - `ScenarioManager`
-  - `ComplexityAnalyzer`
-  - `ResilienceService`
-- `src/main.cpp`
-  - Integracion de escena, mapa, personaje, camara e interfaz
-
-## Estructura del repo
+## Estructura
 
 ```text
-ed-sb-2dproject/
+EcoCampusNav/
 |- CMakeLists.txt
 |- CMakePresets.json
 |- campus.json
-|- settings.json
 |- assets/
-|  |- maps/
-|  |- sprites/
-|  `- tilesets/
 |- external/
 |  `- rlImGui/
 `- src/
    |- core/
    |- repositories/
+   |- runtime/
    |- services/
-   |- ui/        (codigo legado Qt, no es el frontend activo)
-   `- main.cpp
+   `- ui/
+      |- TabManager.cpp
+      `- TabManager.h
 ```
+
+Nota: el frontend Qt legado fue retirado del arbol activo. `src/ui/TabManager.*` se conserva porque hoy no depende de Qt y sigue aportando estado/utilidades al runtime Raylib.
 
 ## Dependencias
 
-- CMake >= 3.20
-- Compilador C++17 (MSVC, Clang o GCC)
-- `raylib` (via `find_package(raylib CONFIG REQUIRED)`)
-- `nlohmann/json` (FetchContent)
-- `imgui` (FetchContent)
-- `external/rlImGui` (wrapper local)
+- CMake 3.20+
+- Compilador compatible con C++17
+- `raylib`
+- `nlohmann/json`
+- `imgui`
+- `external/rlImGui`
 
-## Compilar
-
-### Con presets
+## Compilacion
 
 ```bash
 cmake --preset debug
 cmake --build --preset debug
 ```
 
-o
+## Uso
 
-```bash
-cmake --preset release
-cmake --build --preset release
-```
+1. Ejecuta `EcoCampusNav`.
+2. Presiona `M` para abrir el menu de analisis.
+3. Navega por las pestanas:
+   - `Mapa`
+   - `DFS`
+   - `BFS`
+   - `Conexo`
+   - `Camino`
+   - `Escenarios`
+   - `Complejidad`
+   - `Fallos`
 
-### Manual
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-```
-
-## Ejecutar
-
-Desde la carpeta de build donde quede el ejecutable:
-
-```bash
-./EcoCampusNav
-```
-
-Nota: `CMakeLists.txt` copia automaticamente `assets/` al directorio runtime del ejecutable.
-
-## Controles actuales
+## Controles
 
 - `W/A/S/D`: movimiento
 - `Shift`: sprint
-- Rueda del mouse: zoom de camara
+- Rueda del mouse: zoom
+- `M`: abrir o cerrar el menu de informacion
 
-## Datos de mapa y colision
+## Estado tecnico
 
-- Mapa base activo: `assets/maps/Paradadebus.png`
-- Mapa Tiled activo: `assets/maps/Paradadebus.tmj`
-- Colision: objetos del layer `Hitboxes` en el `.tmj`
-
-## Observaciones tecnicas
-
-- El panel de control usa ImGui.
-- La logica de input de ImGui esta implementada en `external/rlImGui/rlImGui.cpp`.
-- Existe codigo Qt en `src/ui/`, pero actualmente no es la ruta de ejecucion principal.
+- El runtime principal vive en `src/main.cpp`.
+- La interfaz activa usa `raylib` y `rlImGui`.
+- El menu academico compara algoritmos, muestra conectividad, simula fallos y controla perfiles.

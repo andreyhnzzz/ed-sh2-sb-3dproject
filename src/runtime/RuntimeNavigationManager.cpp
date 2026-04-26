@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <limits>
+#include <unordered_map>
 
 namespace {
 std::string canonicalSceneId(std::string sceneName) {
@@ -13,6 +14,22 @@ std::string canonicalSceneId(std::string sceneName) {
         return static_cast<char>(std::tolower(c));
     });
     return sceneName;
+}
+
+bool hasPotentialLoop(const std::vector<std::string>& path) {
+    if (path.size() < 4) return false;
+
+    std::unordered_map<std::string, int> visitsByNode;
+    for (const auto& nodeId : path) {
+        const int visits = ++visitsByNode[nodeId];
+        if (visits > 2) return true;
+    }
+
+    for (size_t i = 1; i + 1 < path.size(); ++i) {
+        if (path[i - 1] == path[i + 1]) return true;
+    }
+
+    return false;
 }
 } // namespace
 
@@ -137,8 +154,19 @@ void RuntimeNavigationManager::refreshRoute(RouteRuntimeState& state,
     state.routePathPoints.clear();
     state.routeRefreshCooldown = 0.05f;
 
-    const PathResult routedPath =
+    PathResult routedPath =
         scenarioManager.buildProfiledPath(graph, currentSceneId, state.routeTargetNodeId);
+    if (routedPath.found && !routedPath.path.empty() && hasPotentialLoop(routedPath.path)) {
+        const PathResult directPath =
+            Algorithms::findPath(graph, currentSceneId, state.routeTargetNodeId,
+                                 scenarioManager.isMobilityReduced(), false);
+        if (directPath.found &&
+            (directPath.total_weight < routedPath.total_weight * 0.7 ||
+             directPath.path.size() < routedPath.path.size())) {
+            routedPath = directPath;
+        }
+    }
+
     if (routedPath.found && !routedPath.path.empty()) {
         if (state.routeScenePlan.empty()) {
             state.routeScenePlan = routedPath.path;

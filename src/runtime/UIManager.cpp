@@ -458,8 +458,8 @@ void UIManager::renderScreen(const RenderContext& ctx,
                                 resilienceService.getBlockedNodes());
 
     renderInfoMenu(ctx, state, routeState, routeScenes, sceneDisplayName, graph, tabState,
-                   scenarioManager, runtimeBlockerService, destinationCatalog,
-                   musicService, soundEffectService, resilienceService);
+                   navService, scenarioManager, complexityAnalyzer, runtimeBlockerService,
+                   destinationCatalog, musicService, soundEffectService, resilienceService);
 
     if (!state.infoMenuOpen) {
         rlImGuiBegin();
@@ -637,7 +637,9 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
                                const std::function<std::string(const std::string&)>& sceneDisplayName,
                                const CampusGraph& graph,
                                TabManagerState& tabState,
+                               NavigationService& navService,
                                ScenarioManager& scenarioManager,
+                               ComplexityAnalyzer& complexityAnalyzer,
                                RuntimeBlockerService& runtimeBlockerService,
                                const DestinationCatalog& destinationCatalog,
                                MusicService& musicService,
@@ -666,7 +668,130 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
     const Color btn = Color{34, 66, 108, 255};
     const Color btnHover = Color{49, 86, 136, 255};
     const Color btnActive = Color{67, 108, 161, 255};
+    const Color accentDfs = Color{255, 184, 116, 255};
+    const Color accentBfs = Color{114, 188, 255, 255};
+    const Color good = Color{100, 220, 100, 255};
+    const Color bad = Color{220, 100, 100, 255};
     const auto blockedNodes = resilienceService.getBlockedNodes();
+    const auto blockedEdges = resilienceService.getBlockedEdges();
+    const auto nodeIds = graph.nodeIds();
+
+    auto setBuffer = [](char* buffer, size_t bufferSize, const std::string& value) {
+        std::snprintf(buffer, bufferSize, "%s", value.c_str());
+    };
+
+    auto ensureNodeBuffer = [&](char* buffer, size_t bufferSize) -> int {
+        if (nodeIds.empty()) {
+            buffer[0] = '\0';
+            return -1;
+        }
+
+        for (size_t i = 0; i < nodeIds.size(); ++i) {
+            if (nodeIds[i] == buffer) return static_cast<int>(i);
+        }
+
+        setBuffer(buffer, bufferSize, nodeIds.front());
+        return 0;
+    };
+
+    auto nodeDisplayName = [&](const std::string& nodeId) -> std::string {
+        if (!graph.hasNode(nodeId)) return nodeId;
+        const auto& node = graph.getNode(nodeId);
+        return node.name.empty() ? nodeId : (nodeId + " - " + node.name);
+    };
+
+    auto drawNodeSelector = [&](const char* label,
+                                char* buffer,
+                                size_t bufferSize,
+                                int x,
+                                int& y,
+                                int width) {
+        DrawText(label, x, y, bodyFont, white);
+        y += px(22);
+
+        const int currentIndex = ensureNodeBuffer(buffer, bufferSize);
+        if (currentIndex < 0) {
+            DrawText("No hay nodos disponibles.", x, y, bodyMutedFont, muted);
+            y += px(28);
+            return;
+        }
+
+        const int arrowW = px(34);
+        Rectangle prevBtn{static_cast<float>(x), static_cast<float>(y),
+                          static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
+        Rectangle nextBtn{static_cast<float>(x + width - arrowW), static_cast<float>(y),
+                          static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
+        Rectangle labelBox{static_cast<float>(x + arrowW + px(6)), static_cast<float>(y),
+                           static_cast<float>(width - (arrowW * 2 + px(12))),
+                           static_cast<float>(buttonHeight)};
+
+        int nextIndex = currentIndex;
+        if (drawRayButton(prevBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
+            nextIndex = (currentIndex - 1 + static_cast<int>(nodeIds.size())) % static_cast<int>(nodeIds.size());
+            soundEffectService.play(SoundEffectType::BetweenOptions);
+        }
+        if (drawRayButton(nextBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
+            nextIndex = (currentIndex + 1) % static_cast<int>(nodeIds.size());
+            soundEffectService.play(SoundEffectType::BetweenOptions);
+        }
+        if (nextIndex != currentIndex) {
+            setBuffer(buffer, bufferSize, nodeIds[nextIndex]);
+        }
+
+        DrawRectangleRec(labelBox, Color{16, 34, 58, 255});
+        DrawRectangleLinesEx(labelBox, 1.5f, Color{80, 118, 170, 220});
+        const std::string display = nodeDisplayName(buffer);
+        DrawText(display.c_str(), static_cast<int>(labelBox.x + px(8)),
+                 static_cast<int>(labelBox.y + px(8)), bodyMutedFont, white);
+        y += px(46);
+    };
+
+    auto drawPagedLines = [&](const std::vector<std::string>& lines,
+                              int& page,
+                              int x,
+                              int& y,
+                              int width,
+                              int listHeight) {
+        const int lineHeight = px(20);
+        const int visibleLines = std::max(1, listHeight / lineHeight);
+        const int totalPages = std::max(1, static_cast<int>((lines.size() + visibleLines - 1) / visibleLines));
+        page = std::clamp(page, 0, totalPages - 1);
+
+        Rectangle listBg{static_cast<float>(x), static_cast<float>(y),
+                         static_cast<float>(width), static_cast<float>(listHeight)};
+        DrawRectangleRec(listBg, Color{14, 26, 42, 220});
+        DrawRectangleLinesEx(listBg, 1.5f, Color{70, 100, 138, 220});
+
+        const int startIdx = page * visibleLines;
+        const int endIdx = std::min(static_cast<int>(lines.size()), startIdx + visibleLines);
+        int lineY = y + px(8);
+        for (int i = startIdx; i < endIdx; ++i) {
+            DrawText(lines[i].c_str(), x + px(8), lineY, bodyMutedFont, muted);
+            lineY += lineHeight;
+        }
+        y += listHeight + px(10);
+
+        Rectangle prevBtn{static_cast<float>(x), static_cast<float>(y),
+                          static_cast<float>(px(36)), static_cast<float>(px(28))};
+        Rectangle nextBtn{static_cast<float>(x + px(132)), static_cast<float>(y),
+                          static_cast<float>(px(36)), static_cast<float>(px(28))};
+        if (drawRayButton(prevBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
+            page = std::max(0, page - 1);
+        }
+        if (drawRayButton(nextBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
+            page = std::min(totalPages - 1, page + 1);
+        }
+        DrawText(TextFormat("Pagina %d/%d", page + 1, totalPages),
+                 x + px(46), y + px(5), bodyMutedFont, white);
+        y += px(38);
+    };
+
+    const int startIndex = ensureNodeBuffer(tabState.startId, sizeof(tabState.startId));
+    const int endIndex = ensureNodeBuffer(tabState.endId, sizeof(tabState.endId));
+    const int nodeIndex = ensureNodeBuffer(tabState.nodeId, sizeof(tabState.nodeId));
+    (void)startIndex;
+    (void)endIndex;
+    (void)nodeIndex;
 
     DrawRectangle(0, 0, ctx.screenWidth, ctx.screenHeight, Color{0, 0, 0, 0});
 
@@ -787,319 +912,589 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
     }
 
     int yRight = contentY + sectionPad;
-    DrawText("Academic Control", rightX + sectionPad, yRight, sectionTitleFont, white);
-    yRight += px(38);
-    DrawLine(rightX + px(12), yRight, rightX + rightW - px(12), yRight, Color{85, 98, 122, 255});
-    yRight += px(18);
+    DrawText("Academic Analysis", rightX + sectionPad, yRight, sectionTitleFont, white);
+    yRight += px(32);
+    DrawText(TextFormat("Escena actual: %s", sceneDisplayName(ctx.currentSceneName).c_str()),
+             rightX + sectionPad, yRight, bodyMutedFont, muted);
+    yRight += px(28);
 
-    DrawText(TextFormat("Current scene: %s", ctx.currentSceneName.c_str()), rightX + sectionPad, yRight, bodyFont, white); yRight += px(26);
-    DrawText(TextFormat("Hitboxes: %s", state.showHitboxes ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
-    DrawText(TextFormat("Triggers: %s", state.showTriggers ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
-    DrawText(TextFormat("Interest zones: %s", state.showInterestZones ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
-    DrawText(TextFormat("Reduced mobility: %s", scenarioManager.isMobilityReduced() ? "ON" : "OFF"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
-    DrawText(TextFormat("Student profile: %s",
-                        scenarioManager.getStudentType() == StudentType::NEW_STUDENT
-                            ? "New"
-                            : (scenarioManager.getStudentType() == StudentType::DISABLED_STUDENT ? "Disabled" : "Veteran")),
-             rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(30);
+    const char* menuTabs[] = {"Mapa", "DFS", "BFS", "Conexo", "Camino", "Escenarios", "Complejidad", "Fallos"};
+    const int tabGap = px(6);
+    const int tabRows = 2;
+    const int tabCols = 4;
+    const int tabBtnW = (rightW - sectionPad * 2 - tabGap * (tabCols - 1)) / tabCols;
+    const int tabBtnH = px(32);
+    for (int i = 0; i < 8; ++i) {
+        const int row = i / tabCols;
+        const int col = i % tabCols;
+        Rectangle tabRect{
+            static_cast<float>(rightX + sectionPad + col * (tabBtnW + tabGap)),
+            static_cast<float>(yRight + row * (tabBtnH + tabGap)),
+            static_cast<float>(tabBtnW),
+            static_cast<float>(tabBtnH)
+        };
+        if (drawRayButton(tabRect, menuTabs[i], bodyMutedFont,
+                          state.activeMenuTab == i ? btnActive : btn,
+                          state.activeMenuTab == i ? btnActive : btnHover,
+                          btnActive, white)) {
+            state.activeMenuTab = i;
+            soundEffectService.play(SoundEffectType::SelectButton);
+        }
+    }
+    yRight += tabRows * tabBtnH + tabGap + px(16);
+
+    const int contentX = rightX + sectionPad;
+    const int contentW = rightW - sectionPad * 2;
+
+    switch (state.activeMenuTab) {
+        case 0: {
+            DrawText("Mapa del Campus y Grafo", contentX, yRight, sectionTitleFont, white);
+            yRight += px(30);
+
+            Rectangle graphToggleBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                                     static_cast<float>(px(260)), static_cast<float>(buttonHeight)};
+            if (drawRayButton(graphToggleBtn,
+                              state.showNavigationGraph ? "Grafo: VISIBLE" : "Grafo: OCULTO",
+                              bodyFont, btn, btnHover, btnActive, white)) {
+                state.showNavigationGraph = !state.showNavigationGraph;
+                soundEffectService.play(SoundEffectType::SelectButton);
+            }
+            yRight += px(46);
+
+            DrawText(TextFormat("Nodos totales: %d", graph.nodeCount()), contentX, yRight, bodyFont, white);
+            yRight += px(22);
+            DrawText(TextFormat("Aristas totales: %d", graph.edgeCount()), contentX, yRight, bodyFont, white);
+            yRight += px(22);
+            DrawText(TextFormat("Nodos bloqueados: %d", static_cast<int>(blockedNodes.size())), contentX, yRight, bodyFont, white);
+            yRight += px(22);
+            DrawText(TextFormat("Conexiones bloqueadas: %d", static_cast<int>(blockedEdges.size())), contentX, yRight, bodyFont, white);
+            yRight += px(30);
+
+            std::vector<std::string> graphLines;
+            graphLines.reserve(nodeIds.size());
+            for (const auto& nodeId : nodeIds) {
+                try {
+                    const Node& node = graph.getNode(nodeId);
+                    graphLines.push_back(TextFormat("[%s] %s | tipo=%s | z=%d",
+                                                    nodeId.c_str(), node.name.c_str(),
+                                                    node.type.c_str(), static_cast<int>(std::round(node.z))));
+                } catch (...) {
+                    graphLines.push_back(nodeId);
+                }
+            }
+            DrawText("Lista de nodos:", contentX, yRight, bodyFont, white);
+            yRight += px(22);
+            drawPagedLines(graphLines, state.graphViewPage, contentX, yRight, contentW, px(220));
+
+            Rectangle legend{static_cast<float>(contentX), static_cast<float>(yRight),
+                             static_cast<float>(std::min(contentW, px(360))), static_cast<float>(px(110))};
+            DrawRectangleRec(legend, Color{18, 30, 46, 230});
+            DrawRectangleLinesEx(legend, 1.5f, Color{90, 125, 165, 220});
+            int ly = static_cast<int>(legend.y) + px(10);
+            DrawText("Leyenda visual:", static_cast<int>(legend.x) + px(10), ly, bodyFont, white);
+            ly += px(24);
+            DrawCircle(static_cast<int>(legend.x) + px(18), ly + px(6), 5, Color{90, 180, 255, 235});
+            DrawText("Nodo normal", static_cast<int>(legend.x) + px(32), ly, bodyMutedFont, muted);
+            ly += px(20);
+            DrawCircle(static_cast<int>(legend.x) + px(18), ly + px(6), 5, Color{255, 215, 0, 220});
+            DrawText("Nodo destacado en ruta", static_cast<int>(legend.x) + px(32), ly, bodyMutedFont, muted);
+            ly += px(20);
+            DrawCircle(static_cast<int>(legend.x) + px(18), ly + px(6), 5, Color{230, 90, 90, 240});
+            DrawText("Nodo bloqueado", static_cast<int>(legend.x) + px(32), ly, bodyMutedFont, muted);
+            break;
+        }
+
+        case 1: {
+            DrawText("Recorrido DFS", contentX, yRight, sectionTitleFont, white);
+            yRight += px(30);
+            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
+
+            Rectangle execBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                              static_cast<float>(px(180)), static_cast<float>(buttonHeight)};
+            if (drawRayButton(execBtn, "Ejecutar DFS", bodyFont, btn, btnHover, btnActive, white)) {
+                tabState.lastTraversal = navService.runDfs(tabState.startId, scenarioManager.isMobilityReduced());
+                tabState.hasTraversal = true;
+                tabState.lastAction = "DFS";
+                soundEffectService.play(SoundEffectType::RouteFixated);
+            }
+            yRight += px(46);
+
+            if (tabState.hasTraversal && tabState.lastAction == "DFS") {
+                DrawText(TextFormat("Nodos visitados: %d", tabState.lastTraversal.nodes_visited),
+                         contentX, yRight, bodyFont, accentDfs);
+                yRight += px(22);
+                DrawText(TextFormat("Tiempo: %lld us", tabState.lastTraversal.elapsed_us),
+                         contentX, yRight, bodyFont, white);
+                yRight += px(28);
+                DrawText("Orden de visita:", contentX, yRight, bodyFont, white);
+                yRight += px(22);
+
+                std::vector<std::string> lines;
+                for (size_t i = 0; i < tabState.lastTraversal.visit_order.size(); ++i) {
+                    lines.push_back(TextFormat("%zu. %s", i + 1, tabState.lastTraversal.visit_order[i].c_str()));
+                }
+                drawPagedLines(lines, state.dfsViewPage, contentX, yRight, contentW, px(220));
+            }
+            break;
+        }
+
+        case 2: {
+            DrawText("Recorrido BFS", contentX, yRight, sectionTitleFont, white);
+            yRight += px(30);
+            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
+
+            Rectangle execBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                              static_cast<float>(px(180)), static_cast<float>(buttonHeight)};
+            if (drawRayButton(execBtn, "Ejecutar BFS", bodyFont, btn, btnHover, btnActive, white)) {
+                tabState.lastTraversal = navService.runBfs(tabState.startId, scenarioManager.isMobilityReduced());
+                tabState.hasTraversal = true;
+                tabState.lastAction = "BFS";
+                soundEffectService.play(SoundEffectType::RouteFixated);
+            }
+            yRight += px(46);
+
+            if (tabState.hasTraversal && tabState.lastAction == "BFS") {
+                DrawText(TextFormat("Nodos visitados: %d", tabState.lastTraversal.nodes_visited),
+                         contentX, yRight, bodyFont, accentBfs);
+                yRight += px(22);
+                DrawText(TextFormat("Tiempo: %lld us", tabState.lastTraversal.elapsed_us),
+                         contentX, yRight, bodyFont, white);
+                yRight += px(28);
+                DrawText("Orden de visita:", contentX, yRight, bodyFont, white);
+                yRight += px(22);
+
+                std::vector<std::string> lines;
+                for (size_t i = 0; i < tabState.lastTraversal.visit_order.size(); ++i) {
+                    lines.push_back(TextFormat("%zu. %s", i + 1, tabState.lastTraversal.visit_order[i].c_str()));
+                }
+                drawPagedLines(lines, state.bfsViewPage, contentX, yRight, contentW, px(220));
+            }
+            break;
+        }
+
+        case 3: {
+            DrawText("Conectividad del Campus", contentX, yRight, sectionTitleFont, white);
+            yRight += px(30);
+            DrawText("Comprueba si todo el grafo sigue conectado con el estado actual.",
+                     contentX, yRight, bodyMutedFont, muted);
+            yRight += px(34);
+
+            Rectangle connBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                              static_cast<float>(px(240)), static_cast<float>(buttonHeight)};
+            if (drawRayButton(connBtn, "Verificar Conexidad", bodyFont, btn, btnHover, btnActive, white)) {
+                tabState.lastConnected = navService.checkConnectivity();
+                tabState.lastAction = "Connectivity";
+                soundEffectService.play(SoundEffectType::RouteFixated);
+            }
+            yRight += px(48);
+
+            if (tabState.lastAction == "Connectivity") {
+                DrawText(tabState.lastConnected ? "RESULTADO: CAMPUS CONEXO" : "RESULTADO: CAMPUS NO CONEXO",
+                         contentX, yRight, bodyFont, tabState.lastConnected ? good : bad);
+                yRight += px(28);
+
+                const auto components = navService.getComponents();
+                DrawText(TextFormat("Componentes detectadas: %d", static_cast<int>(components.size())),
+                         contentX, yRight, bodyFont, white);
+                yRight += px(26);
+
+                std::vector<std::string> lines;
+                for (size_t i = 0; i < components.size(); ++i) {
+                    std::string line = "Componente " + std::to_string(i + 1) + ": ";
+                    for (size_t j = 0; j < components[i].size(); ++j) {
+                        if (j > 0) line += ", ";
+                        line += components[i][j];
+                    }
+                    lines.push_back(line);
+                }
+                if (lines.empty()) lines.push_back("No hay componentes para mostrar.");
+                drawPagedLines(lines, state.graphViewPage, contentX, yRight, contentW, px(180));
+            }
+            break;
+        }
+
+        case 4: {
+            DrawText("Buscar Camino entre Dos Puntos", contentX, yRight, sectionTitleFont, white);
+            yRight += px(30);
+            drawNodeSelector("Origen:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
+            drawNodeSelector("Destino:", tabState.endId, sizeof(tabState.endId), contentX, yRight, px(320));
+
+            Rectangle directBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                                static_cast<float>(px(200)), static_cast<float>(buttonHeight)};
+            Rectangle dfsBtn{static_cast<float>(contentX + px(210)), static_cast<float>(yRight),
+                             static_cast<float>(px(200)), static_cast<float>(buttonHeight)};
+            if (drawRayButton(directBtn, "Ruta Perfilada", bodyFont, btn, btnHover, btnActive, white)) {
+                tabState.lastPath = scenarioManager.buildProfiledPath(graph, tabState.startId, tabState.endId);
+                tabState.hasPath = true;
+                tabState.lastAction = "PathDijkstra";
+                soundEffectService.play(SoundEffectType::RouteFixated);
+            }
+            if (drawRayButton(dfsBtn, "Buscar Camino DFS", bodyFont, btn, btnHover, btnActive, white)) {
+                tabState.lastPath = runProfiledDfsPath(graph, navService, scenarioManager, tabState.startId, tabState.endId);
+                tabState.hasPath = true;
+                tabState.lastAction = "PathDFS";
+                soundEffectService.play(SoundEffectType::RouteFixated);
+            }
+            yRight += px(48);
+
+            if (tabState.hasPath &&
+                (tabState.lastAction == "PathDijkstra" || tabState.lastAction == "PathDFS")) {
+                DrawText(tabState.lastPath.found ? "CAMINO ENCONTRADO" : "NO SE ENCONTRO CAMINO",
+                         contentX, yRight, bodyFont, tabState.lastPath.found ? good : bad);
+                yRight += px(26);
+                DrawText(TextFormat("Distancia total: %.2f", tabState.lastPath.total_weight),
+                         contentX, yRight, bodyFont, white);
+                yRight += px(28);
+
+                std::vector<std::string> pathLines;
+                for (size_t i = 0; i < tabState.lastPath.path.size(); ++i) {
+                    pathLines.push_back(TextFormat("%zu. %s", i + 1, tabState.lastPath.path[i].c_str()));
+                }
+                if (pathLines.empty()) pathLines.push_back("No hay nodos en la ruta.");
+                drawPagedLines(pathLines, state.graphViewPage, contentX, yRight, contentW, px(200));
+            }
+            break;
+        }
+
+        case 5: {
+            DrawText("Simulacion de Escenarios", contentX, yRight, sectionTitleFont, white);
+            yRight += px(30);
+
+            const int thirdW = (contentW - px(12)) / 3;
+            const bool isNew = scenarioManager.getStudentType() == StudentType::NEW_STUDENT;
+            const bool isVet = scenarioManager.getStudentType() == StudentType::VETERAN_STUDENT;
+            const bool isDis = scenarioManager.getStudentType() == StudentType::DISABLED_STUDENT;
+            Rectangle newBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                             static_cast<float>(thirdW), static_cast<float>(buttonHeight)};
+            Rectangle vetBtn{static_cast<float>(contentX + thirdW + px(6)), static_cast<float>(yRight),
+                             static_cast<float>(thirdW), static_cast<float>(buttonHeight)};
+            Rectangle disBtn{static_cast<float>(contentX + (thirdW + px(6)) * 2), static_cast<float>(yRight),
+                             static_cast<float>(thirdW), static_cast<float>(buttonHeight)};
+            if (drawRayButton(newBtn, "Nuevo", bodyMutedFont,
+                              isNew ? btnActive : btn, btnHover, btnActive, white)) {
+                scenarioManager.setStudentType(StudentType::NEW_STUDENT);
+                routeState.routeRefreshCooldown = 0.0f;
+                soundEffectService.play(SoundEffectType::SelectButton);
+            }
+            if (drawRayButton(vetBtn, "Veterano", bodyMutedFont,
+                              isVet ? btnActive : btn, btnHover, btnActive, white)) {
+                scenarioManager.setStudentType(StudentType::VETERAN_STUDENT);
+                routeState.routeRefreshCooldown = 0.0f;
+                soundEffectService.play(SoundEffectType::SelectButton);
+            }
+            if (drawRayButton(disBtn, "Discapacitado", bodyMutedFont,
+                              isDis ? btnActive : btn, btnHover, btnActive, white)) {
+                scenarioManager.setStudentType(StudentType::DISABLED_STUDENT);
+                routeState.routeRefreshCooldown = 0.0f;
+                soundEffectService.play(SoundEffectType::SelectButton);
+            }
+            yRight += px(46);
+
+            Rectangle mobilityBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                                  static_cast<float>(px(300)), static_cast<float>(buttonHeight)};
+            if (drawRayButton(mobilityBtn,
+                              scenarioManager.isMobilityReduced() ? "Movilidad reducida: ACTIVA"
+                                                                  : "Movilidad reducida: INACTIVA",
+                              bodyFont, btn, btnHover, btnActive, white)) {
+                if (scenarioManager.getStudentType() != StudentType::DISABLED_STUDENT) {
+                    scenarioManager.setMobilityReduced(!scenarioManager.isMobilityReduced());
+                    routeState.routeRefreshCooldown = 0.0f;
+                }
+                soundEffectService.play(SoundEffectType::SelectButton);
+            }
+            yRight += px(50);
+
+            DrawText("Comportamiento del perfil:", contentX, yRight, bodyFont, white);
+            yRight += px(24);
+            if (isNew) {
+                DrawText("- Debe pasar por un POI valido sin forzar loops innecesarios.", contentX, yRight, bodyMutedFont, accentDfs);
+                yRight += px(22);
+            }
+            if (isVet && !scenarioManager.isMobilityReduced()) {
+                DrawText("- Busca la ruta mas corta disponible.", contentX, yRight, bodyMutedFont, good);
+                yRight += px(22);
+            }
+            if (isDis || scenarioManager.isMobilityReduced()) {
+                DrawText("- Evita escaleras y prioriza rutas accesibles.", contentX, yRight, bodyMutedFont, bad);
+                yRight += px(22);
+            }
+            yRight += px(10);
+
+            const auto profiledSteps = scenarioManager.applyProfile(graph, tabState.startId, tabState.endId);
+            DrawText("Waypoints aplicados al perfil:", contentX, yRight, bodyFont, white);
+            yRight += px(22);
+            std::vector<std::string> profileLines;
+            for (size_t i = 0; i < profiledSteps.size(); ++i) {
+                profileLines.push_back(TextFormat("%zu. %s", i + 1, profiledSteps[i].c_str()));
+            }
+            if (profileLines.empty()) profileLines.push_back("Selecciona origen y destino para ver el perfil.");
+            drawPagedLines(profileLines, state.graphViewPage, contentX, yRight, contentW, px(140));
+            break;
+        }
+
+        case 6: {
+            DrawText("Analisis de Complejidad: BFS vs DFS", contentX, yRight, sectionTitleFont, white);
+            yRight += px(30);
+            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
+            drawNodeSelector("Nodo destino:", tabState.endId, sizeof(tabState.endId), contentX, yRight, px(320));
+
+            Rectangle analyzeBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                                 static_cast<float>(px(280)), static_cast<float>(buttonHeight)};
+            if (drawRayButton(analyzeBtn, "Ejecutar Analisis Comparativo", bodyFont, btn, btnHover, btnActive, white)) {
+                tabState.lastStats = complexityAnalyzer.analyze(tabState.startId, scenarioManager.isMobilityReduced());
+                tabState.lastComparison = complexityAnalyzer.compareAlgorithms(
+                    tabState.startId, tabState.endId, scenarioManager.isMobilityReduced());
+                tabState.hasComparison = true;
+                tabState.lastAction = "Complexity";
+                soundEffectService.play(SoundEffectType::RouteFixated);
+            }
+            yRight += px(48);
+
+            if (tabState.hasComparison && tabState.lastAction == "Complexity") {
+                DrawText("Algoritmo", contentX, yRight, bodyFont, white);
+                DrawText("Nodos", contentX + px(140), yRight, bodyFont, white);
+                DrawText("Tiempo (us)", contentX + px(260), yRight, bodyFont, white);
+                DrawText("Complejidad", contentX + px(420), yRight, bodyFont, white);
+                yRight += px(24);
+                DrawLine(contentX, yRight, contentX + contentW, yRight, Color{85, 98, 122, 255});
+                yRight += px(10);
+
+                DrawText("DFS", contentX, yRight, bodyFont, accentDfs);
+                DrawText(TextFormat("%d", tabState.lastComparison.dfs_nodes_visited), contentX + px(140), yRight, bodyMutedFont, muted);
+                DrawText(TextFormat("%lld", tabState.lastComparison.dfs_elapsed_us), contentX + px(260), yRight, bodyMutedFont, muted);
+                DrawText("O(V+E)", contentX + px(420), yRight, bodyMutedFont, muted);
+                yRight += px(22);
+
+                DrawText("BFS", contentX, yRight, bodyFont, accentBfs);
+                DrawText(TextFormat("%d", tabState.lastComparison.bfs_nodes_visited), contentX + px(140), yRight, bodyMutedFont, muted);
+                DrawText(TextFormat("%lld", tabState.lastComparison.bfs_elapsed_us), contentX + px(260), yRight, bodyMutedFont, muted);
+                DrawText("O(V+E)", contentX + px(420), yRight, bodyMutedFont, muted);
+                yRight += px(32);
+
+                std::string conclusion;
+                Color conclusionColor = white;
+                if (!tabState.lastComparison.dfs_reaches_destination &&
+                    !tabState.lastComparison.bfs_reaches_destination) {
+                    conclusion = "Ningun algoritmo alcanzo el destino.";
+                    conclusionColor = bad;
+                } else if (tabState.lastComparison.bfs_nodes_visited > tabState.lastComparison.dfs_nodes_visited) {
+                    conclusion = "BFS visito mas nodos que DFS antes de detenerse.";
+                    conclusionColor = accentBfs;
+                } else if (tabState.lastComparison.bfs_nodes_visited < tabState.lastComparison.dfs_nodes_visited) {
+                    conclusion = "DFS visito mas nodos que BFS antes de detenerse.";
+                    conclusionColor = accentDfs;
+                } else {
+                    conclusion = "BFS y DFS visitaron la misma cantidad de nodos.";
+                    conclusionColor = good;
+                }
+                DrawText(conclusion.c_str(), contentX, yRight, bodyFont, conclusionColor);
+                yRight += px(28);
+                DrawText(TextFormat("DFS alcanza destino: %s", tabState.lastComparison.dfs_reaches_destination ? "SI" : "NO"),
+                         contentX, yRight, bodyMutedFont, tabState.lastComparison.dfs_reaches_destination ? good : bad);
+                yRight += px(20);
+                DrawText(TextFormat("BFS alcanza destino: %s", tabState.lastComparison.bfs_reaches_destination ? "SI" : "NO"),
+                         contentX, yRight, bodyMutedFont, tabState.lastComparison.bfs_reaches_destination ? good : bad);
+                yRight += px(20);
+                DrawText(TextFormat("Diferencia de nodos visitados: %d",
+                                    std::abs(tabState.lastComparison.bfs_nodes_visited -
+                                             tabState.lastComparison.dfs_nodes_visited)),
+                         contentX, yRight, bodyMutedFont, muted);
+                yRight += px(20);
+                if (tabState.lastComparison.bfs_elapsed_us > 0) {
+                    const double ratio =
+                        static_cast<double>(tabState.lastComparison.dfs_elapsed_us) /
+                        static_cast<double>(tabState.lastComparison.bfs_elapsed_us);
+                    DrawText(TextFormat("Ratio DFS/BFS: %.2fx", ratio), contentX, yRight, bodyMutedFont, muted);
+                    yRight += px(20);
+                }
+                yRight += px(10);
+                DrawText("Teoria: ambos algoritmos tienen O(V+E). BFS usa cola y DFS pila.", contentX, yRight, bodyMutedFont, muted);
+            }
+            break;
+        }
+
+        case 7: {
+            DrawText("Puntos de Fallos y Bloqueos", contentX, yRight, sectionTitleFont, white);
+            yRight += px(30);
+
+            drawNodeSelector("Origen alterno:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
+            drawNodeSelector("Destino alterno:", tabState.endId, sizeof(tabState.endId), contentX, yRight, px(320));
+
+            const auto& blockNodeOptions = runtimeBlockerService.nodeOptions();
+            const auto& blockEdgeOptions = runtimeBlockerService.edgeOptions();
+
+            DrawText("Nodo para bloquear:", contentX, yRight, bodyFont, white);
+            yRight += px(22);
+            if (!blockNodeOptions.empty()) {
+                state.selectedBlockedNodeIdx =
+                    std::clamp(state.selectedBlockedNodeIdx, 0, static_cast<int>(blockNodeOptions.size()) - 1);
+                const int arrowW = px(34);
+                Rectangle prevBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                                  static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
+                Rectangle nextBtn{static_cast<float>(contentX + px(320) - arrowW), static_cast<float>(yRight),
+                                  static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
+                Rectangle labelBox{static_cast<float>(contentX + arrowW + px(6)), static_cast<float>(yRight),
+                                   static_cast<float>(px(320) - (arrowW * 2 + px(12))),
+                                   static_cast<float>(buttonHeight)};
+                if (drawRayButton(prevBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
+                    state.selectedBlockedNodeIdx =
+                        (state.selectedBlockedNodeIdx - 1 + static_cast<int>(blockNodeOptions.size())) %
+                        static_cast<int>(blockNodeOptions.size());
+                    soundEffectService.play(SoundEffectType::BetweenOptions);
+                }
+                if (drawRayButton(nextBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
+                    state.selectedBlockedNodeIdx =
+                        (state.selectedBlockedNodeIdx + 1) % static_cast<int>(blockNodeOptions.size());
+                    soundEffectService.play(SoundEffectType::BetweenOptions);
+                }
+                DrawRectangleRec(labelBox, Color{16, 34, 58, 255});
+                DrawRectangleLinesEx(labelBox, 1.5f, Color{80, 118, 170, 220});
+                DrawText(blockNodeOptions[state.selectedBlockedNodeIdx].label.c_str(),
+                         static_cast<int>(labelBox.x + px(8)), static_cast<int>(labelBox.y + px(8)),
+                         bodyMutedFont, white);
+                yRight += px(46);
+            }
+
+            DrawText("Conexion para bloquear:", contentX, yRight, bodyFont, white);
+            yRight += px(22);
+            if (!blockEdgeOptions.empty()) {
+                state.selectedBlockedEdgeIdx =
+                    std::clamp(state.selectedBlockedEdgeIdx, 0, static_cast<int>(blockEdgeOptions.size()) - 1);
+                const int arrowW = px(34);
+                Rectangle prevBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                                  static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
+                Rectangle nextBtn{static_cast<float>(contentX + contentW - arrowW), static_cast<float>(yRight),
+                                  static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
+                Rectangle labelBox{static_cast<float>(contentX + arrowW + px(6)), static_cast<float>(yRight),
+                                   static_cast<float>(contentW - (arrowW * 2 + px(12))),
+                                   static_cast<float>(buttonHeight)};
+                if (drawRayButton(prevBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
+                    state.selectedBlockedEdgeIdx =
+                        (state.selectedBlockedEdgeIdx - 1 + static_cast<int>(blockEdgeOptions.size())) %
+                        static_cast<int>(blockEdgeOptions.size());
+                    soundEffectService.play(SoundEffectType::BetweenOptions);
+                }
+                if (drawRayButton(nextBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
+                    state.selectedBlockedEdgeIdx =
+                        (state.selectedBlockedEdgeIdx + 1) % static_cast<int>(blockEdgeOptions.size());
+                    soundEffectService.play(SoundEffectType::BetweenOptions);
+                }
+                DrawRectangleRec(labelBox, Color{16, 34, 58, 255});
+                DrawRectangleLinesEx(labelBox, 1.5f, Color{80, 118, 170, 220});
+                DrawText(blockEdgeOptions[state.selectedBlockedEdgeIdx].label.c_str(),
+                         static_cast<int>(labelBox.x + px(8)), static_cast<int>(labelBox.y + px(8)),
+                         bodyMutedFont, white);
+                yRight += px(46);
+            }
+
+            Rectangle blockNodeBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                                   static_cast<float>(px(180)), static_cast<float>(buttonHeight)};
+            Rectangle blockEdgeBtn{static_cast<float>(contentX + px(190)), static_cast<float>(yRight),
+                                   static_cast<float>(px(200)), static_cast<float>(buttonHeight)};
+            Rectangle clearBlocksBtn{static_cast<float>(contentX + px(400)), static_cast<float>(yRight),
+                                     static_cast<float>(px(180)), static_cast<float>(buttonHeight)};
+            if (!blockNodeOptions.empty() &&
+                drawRayButton(blockNodeBtn, "Bloquear Nodo", bodyFont,
+                              Color{180, 50, 50, 255}, Color{220, 70, 70, 255}, Color{255, 90, 90, 255}, white)) {
+                runtimeBlockerService.blockNode(blockNodeOptions[state.selectedBlockedNodeIdx], resilienceService);
+                tabState.lastAction = "BlockNode";
+                routeState.routeRefreshCooldown = 0.0f;
+                soundEffectService.play(SoundEffectType::SelectButton);
+            }
+            if (!blockEdgeOptions.empty() &&
+                drawRayButton(blockEdgeBtn, "Bloquear Conexion", bodyFont,
+                              Color{180, 50, 50, 255}, Color{220, 70, 70, 255}, Color{255, 90, 90, 255}, white)) {
+                runtimeBlockerService.blockEdge(blockEdgeOptions[state.selectedBlockedEdgeIdx], resilienceService);
+                tabState.lastAction = "BlockEdge";
+                routeState.routeRefreshCooldown = 0.0f;
+                soundEffectService.play(SoundEffectType::SelectButton);
+            }
+            if (drawRayButton(clearBlocksBtn, "Limpiar Bloqueos", bodyFont,
+                              Color{50, 120, 50, 255}, Color{70, 150, 70, 255}, Color{90, 180, 90, 255}, white)) {
+                runtimeBlockerService.clearAll(resilienceService);
+                tabState.lastAction = "UnblockAll";
+                routeState.routeRefreshCooldown = 0.0f;
+                soundEffectService.play(SoundEffectType::SelectButton);
+            }
+            yRight += px(50);
+
+            Rectangle altRouteBtn{static_cast<float>(contentX), static_cast<float>(yRight),
+                                  static_cast<float>(px(260)), static_cast<float>(buttonHeight)};
+            if (drawRayButton(altRouteBtn, "Buscar Ruta Alterna", bodyFont, btn, btnHover, btnActive, white)) {
+                tabState.lastPath = runProfiledAlternatePath(graph, resilienceService, scenarioManager,
+                                                             tabState.startId, tabState.endId);
+                tabState.hasPath = true;
+                tabState.lastAction = "AltPath";
+                soundEffectService.play(SoundEffectType::RouteFixated);
+            }
+            yRight += px(46);
+
+            DrawText(TextFormat("Conectividad global: %s", resilienceService.isStillConnected() ? "CONECTADO" : "FRAGMENTADO"),
+                     contentX, yRight, bodyFont, resilienceService.isStillConnected() ? good : bad);
+            yRight += px(24);
+            DrawText(TextFormat("Bloqueos activos: %d nodos, %d conexiones",
+                                static_cast<int>(blockedNodes.size()), static_cast<int>(blockedEdges.size())),
+                     contentX, yRight, bodyFont, white);
+            yRight += px(26);
+
+            std::vector<std::string> blockLines;
+            for (const auto& nodeId : blockedNodes) {
+                blockLines.push_back("Nodo bloqueado: " + nodeId);
+            }
+            for (const auto& edge : blockedEdges) {
+                blockLines.push_back("Conexion bloqueada: " + edge.first + " <-> " + edge.second);
+            }
+            if (blockLines.empty()) blockLines.push_back("No hay bloqueos activos.");
+            drawPagedLines(blockLines, state.graphViewPage, contentX, yRight, contentW, px(140));
+
+            if (tabState.lastAction == "AltPath" && tabState.hasPath) {
+                DrawText(tabState.lastPath.found ? "RUTA ALTERNA ENCONTRADA" : "SIN RUTA ALTERNA DISPONIBLE",
+                         contentX, yRight, bodyFont, tabState.lastPath.found ? good : bad);
+                yRight += px(24);
+                DrawText(TextFormat("Distancia alterna: %.2f", tabState.lastPath.total_weight),
+                         contentX, yRight, bodyMutedFont, muted);
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
 
     const float musicVolume = AudioManager::getInstance().getMusicVolume();
     const float sfxVolume = AudioManager::getInstance().getSFXVolume();
-    DrawText(TextFormat("Music volume: %d%%", static_cast<int>(std::round(musicVolume * 100.0f))),
-             rightX + sectionPad, yRight, bodyMutedFont, muted);
-    yRight += px(24);
-    Rectangle musicDownBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
-                           static_cast<float>(px(44)), static_cast<float>(buttonHeight)};
-    Rectangle musicUpBtn{static_cast<float>(rightX + sectionPad + px(54)), static_cast<float>(yRight),
-                         static_cast<float>(px(44)), static_cast<float>(buttonHeight)};
-    if (drawRayButton(musicDownBtn, "-", bodyFont, btn, btnHover, btnActive, white)) {
+    const int footerY = contentY + contentH - px(38);
+    DrawText(TextFormat("Musica %d%% | SFX %d%% | Perfil %s | Movilidad %s",
+                        static_cast<int>(std::round(musicVolume * 100.0f)),
+                        static_cast<int>(std::round(sfxVolume * 100.0f)),
+                        studentTypeToLabel(scenarioManager.getStudentType()),
+                        scenarioManager.isMobilityReduced() ? "reducida" : "normal"),
+             rightX + sectionPad, footerY, bodyMutedFont, muted);
+
+    Rectangle musicDownBtn{static_cast<float>(rightX + rightW - px(160)), static_cast<float>(footerY - px(6)),
+                           static_cast<float>(px(28)), static_cast<float>(px(28))};
+    Rectangle musicUpBtn{static_cast<float>(rightX + rightW - px(128)), static_cast<float>(footerY - px(6)),
+                         static_cast<float>(px(28)), static_cast<float>(px(28))};
+    Rectangle sfxDownBtn{static_cast<float>(rightX + rightW - px(78)), static_cast<float>(footerY - px(6)),
+                         static_cast<float>(px(28)), static_cast<float>(px(28))};
+    Rectangle sfxUpBtn{static_cast<float>(rightX + rightW - px(46)), static_cast<float>(footerY - px(6)),
+                       static_cast<float>(px(28)), static_cast<float>(px(28))};
+    if (drawRayButton(musicDownBtn, "-", bodyMutedFont, btn, btnHover, btnActive, white)) {
         musicService.setVolume(musicVolume - 0.05f);
         soundEffectService.play(SoundEffectType::BetweenOptions);
     }
-    if (drawRayButton(musicUpBtn, "+", bodyFont, btn, btnHover, btnActive, white)) {
+    if (drawRayButton(musicUpBtn, "+", bodyMutedFont, btn, btnHover, btnActive, white)) {
         musicService.setVolume(musicVolume + 0.05f);
         soundEffectService.play(SoundEffectType::BetweenOptions);
     }
-    yRight += px(46);
-
-    DrawText(TextFormat("SFX volume: %d%%", static_cast<int>(std::round(sfxVolume * 100.0f))),
-             rightX + sectionPad, yRight, bodyMutedFont, muted);
-    yRight += px(24);
-    Rectangle sfxDownBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
-                         static_cast<float>(px(44)), static_cast<float>(buttonHeight)};
-    Rectangle sfxUpBtn{static_cast<float>(rightX + sectionPad + px(54)), static_cast<float>(yRight),
-                       static_cast<float>(px(44)), static_cast<float>(buttonHeight)};
-    if (drawRayButton(sfxDownBtn, "-", bodyFont, btn, btnHover, btnActive, white)) {
+    if (drawRayButton(sfxDownBtn, "-", bodyMutedFont, btn, btnHover, btnActive, white)) {
         soundEffectService.setVolume(sfxVolume - 0.05f);
         soundEffectService.play(SoundEffectType::BetweenOptions);
     }
-    if (drawRayButton(sfxUpBtn, "+", bodyFont, btn, btnHover, btnActive, white)) {
+    if (drawRayButton(sfxUpBtn, "+", bodyMutedFont, btn, btnHover, btnActive, white)) {
         soundEffectService.setVolume(sfxVolume + 0.05f);
         soundEffectService.play(SoundEffectType::BetweenOptions);
     }
-    yRight += px(54);
-
-    Rectangle graphToggleBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
-                             static_cast<float>(px(290)), static_cast<float>(buttonHeight)};
-    if (drawRayButton(graphToggleBtn,
-                      state.showNavigationGraph ? "Grafo navegacion: ON"
-                                                : "Grafo navegacion: OFF",
-                      bodyFont, btn, btnHover, btnActive, white)) {
-        state.showNavigationGraph = !state.showNavigationGraph;
-        soundEffectService.play(SoundEffectType::SelectButton);
-    }
-    yRight += px(54);
-
-    const int rightInnerX = rightX + sectionPad;
-    const int rightInnerW = rightW - sectionPad * 2;
-    const int hGap = px(8);
-
-    const int profileTwoColW = std::max(px(90), (rightInnerW - hGap) / 2);
-    Rectangle newProfileBtn{static_cast<float>(rightInnerX), static_cast<float>(yRight),
-                            static_cast<float>(profileTwoColW), static_cast<float>(buttonHeight)};
-    Rectangle veteranProfileBtn{static_cast<float>(rightInnerX + profileTwoColW + hGap), static_cast<float>(yRight),
-                                static_cast<float>(profileTwoColW), static_cast<float>(buttonHeight)};
-    yRight += buttonHeight + px(8);
-    Rectangle disabledProfileBtn{static_cast<float>(rightInnerX), static_cast<float>(yRight),
-                                 static_cast<float>(rightInnerW), static_cast<float>(buttonHeight)};
-    if (drawRayButton(newProfileBtn, "Nuevo", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        scenarioManager.setStudentType(StudentType::NEW_STUDENT);
-        routeState.routeRefreshCooldown = 0.0f;
-        soundEffectService.play(SoundEffectType::SelectButton);
-    }
-    if (drawRayButton(veteranProfileBtn, "Veterano", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        scenarioManager.setStudentType(StudentType::VETERAN_STUDENT);
-        routeState.routeRefreshCooldown = 0.0f;
-        soundEffectService.play(SoundEffectType::SelectButton);
-    }
-    if (drawRayButton(disabledProfileBtn, "Discapacitado", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        scenarioManager.setStudentType(StudentType::DISABLED_STUDENT);
-        routeState.routeRefreshCooldown = 0.0f;
-        soundEffectService.play(SoundEffectType::SelectButton);
-    }
-    yRight += px(54);
-
-    const auto& blockNodeOptions = runtimeBlockerService.nodeOptions();
-    if (!blockNodeOptions.empty()) {
-        state.selectedBlockedNodeIdx =
-            std::clamp(state.selectedBlockedNodeIdx, 0, static_cast<int>(blockNodeOptions.size()) - 1);
-        const int selectorW = rightInnerW;
-        const int arrowW = px(30);
-        Rectangle prevNodeBtn{static_cast<float>(rightInnerX), static_cast<float>(yRight),
-                              static_cast<float>(px(30)), static_cast<float>(buttonHeight)};
-        Rectangle nextNodeBtn{static_cast<float>(rightInnerX + selectorW - arrowW), static_cast<float>(yRight),
-                              static_cast<float>(px(30)), static_cast<float>(buttonHeight)};
-        Rectangle nodeLabelBox{static_cast<float>(rightInnerX + arrowW + hGap), static_cast<float>(yRight),
-                               static_cast<float>(selectorW - (arrowW * 2 + hGap * 2)), static_cast<float>(buttonHeight)};
-        if (drawRayButton(prevNodeBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
-            state.selectedBlockedNodeIdx =
-                (state.selectedBlockedNodeIdx - 1 + static_cast<int>(blockNodeOptions.size())) %
-                static_cast<int>(blockNodeOptions.size());
-            soundEffectService.play(SoundEffectType::BetweenOptions);
-        }
-        if (drawRayButton(nextNodeBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
-            state.selectedBlockedNodeIdx =
-                (state.selectedBlockedNodeIdx + 1) % static_cast<int>(blockNodeOptions.size());
-            soundEffectService.play(SoundEffectType::BetweenOptions);
-        }
-        DrawRectangleRec(nodeLabelBox, Color{16, 34, 58, 255});
-        DrawRectangleLinesEx(nodeLabelBox, 1.5f, Color{80, 118, 170, 220});
-        DrawText(blockNodeOptions[state.selectedBlockedNodeIdx].label.c_str(),
-                 static_cast<int>(nodeLabelBox.x + px(8)),
-                 static_cast<int>(nodeLabelBox.y + px(8)),
-                 bodyMutedFont, white);
-        yRight += px(48);
-    }
-
-    const auto& blockEdgeOptions = runtimeBlockerService.edgeOptions();
-    if (!blockEdgeOptions.empty()) {
-        state.selectedBlockedEdgeIdx =
-            std::clamp(state.selectedBlockedEdgeIdx, 0, static_cast<int>(blockEdgeOptions.size()) - 1);
-        const int selectorW = rightInnerW;
-        const int arrowW = px(30);
-        Rectangle prevEdgeBtn{static_cast<float>(rightInnerX), static_cast<float>(yRight),
-                              static_cast<float>(px(30)), static_cast<float>(buttonHeight)};
-        Rectangle nextEdgeBtn{static_cast<float>(rightInnerX + selectorW - arrowW), static_cast<float>(yRight),
-                              static_cast<float>(px(30)), static_cast<float>(buttonHeight)};
-        Rectangle edgeLabelBox{static_cast<float>(rightInnerX + arrowW + hGap), static_cast<float>(yRight),
-                               static_cast<float>(selectorW - (arrowW * 2 + hGap * 2)), static_cast<float>(buttonHeight)};
-        if (drawRayButton(prevEdgeBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
-            state.selectedBlockedEdgeIdx =
-                (state.selectedBlockedEdgeIdx - 1 + static_cast<int>(blockEdgeOptions.size())) %
-                static_cast<int>(blockEdgeOptions.size());
-            soundEffectService.play(SoundEffectType::BetweenOptions);
-        }
-        if (drawRayButton(nextEdgeBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
-            state.selectedBlockedEdgeIdx =
-                (state.selectedBlockedEdgeIdx + 1) % static_cast<int>(blockEdgeOptions.size());
-            soundEffectService.play(SoundEffectType::BetweenOptions);
-        }
-        DrawRectangleRec(edgeLabelBox, Color{16, 34, 58, 255});
-        DrawRectangleLinesEx(edgeLabelBox, 1.5f, Color{80, 118, 170, 220});
-        DrawText(blockEdgeOptions[state.selectedBlockedEdgeIdx].label.c_str(),
-                 static_cast<int>(edgeLabelBox.x + px(8)),
-                 static_cast<int>(edgeLabelBox.y + px(8)),
-                 bodyMutedFont, white);
-        yRight += px(48);
-    }
-
-    const int blockColW = std::max(px(88), (rightInnerW - hGap) / 2);
-    Rectangle blockNodeBtn{static_cast<float>(rightInnerX), static_cast<float>(yRight),
-                           static_cast<float>(blockColW), static_cast<float>(buttonHeight)};
-    Rectangle blockEdgeBtn{static_cast<float>(rightInnerX + blockColW + hGap), static_cast<float>(yRight),
-                           static_cast<float>(blockColW), static_cast<float>(buttonHeight)};
-    yRight += buttonHeight + px(8);
-    Rectangle clearBlocksBtn{static_cast<float>(rightInnerX), static_cast<float>(yRight),
-                             static_cast<float>(rightInnerW), static_cast<float>(buttonHeight)};
-    if (!blockNodeOptions.empty() &&
-        drawRayButton(blockNodeBtn, "Bloq. Nodo", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        runtimeBlockerService.blockNode(blockNodeOptions[state.selectedBlockedNodeIdx], resilienceService);
-        tabState.lastAction = "BlockNode";
-        routeState.routeRefreshCooldown = 0.0f;
-    }
-    if (!blockEdgeOptions.empty() &&
-        drawRayButton(blockEdgeBtn, "Bloq. Conexion", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        runtimeBlockerService.blockEdge(blockEdgeOptions[state.selectedBlockedEdgeIdx], resilienceService);
-        tabState.lastAction = "BlockEdge";
-        routeState.routeRefreshCooldown = 0.0f;
-    }
-    if (drawRayButton(clearBlocksBtn, "Limpiar Bloqueos", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        runtimeBlockerService.clearAll(resilienceService);
-        tabState.lastAction = "UnblockAll";
-        routeState.routeRefreshCooldown = 0.0f;
-    }
-    yRight += px(60);
-
-    const std::string academicOrigin = sceneDisplayName(ctx.currentSceneName);
-    const std::string academicDestination = (routeState.routeActive && !routeState.routeTargetNodeId.empty())
-        ? destinationCatalog.displayLabel(routeState.routeTargetNodeId)
-        : (tabState.endId[0] != '\0' ? sceneDisplayName(tabState.endId) : std::string("-"));
-    const int pagerTopY = contentY + contentH - px(42);
-    const int reserveForTail = px(320); // reserva amplia para resumen+rubrica+paginador
-    auto canDrawDetailLine = [&](int lineStep) -> bool {
-        return (yRight + lineStep) < (pagerTopY - reserveForTail);
-    };
-
-    DrawText(TextFormat("Origin: %s", academicOrigin.c_str()), rightX + sectionPad, yRight, bodyFont, white); yRight += px(24);
-    DrawText(TextFormat("Destination: %s", academicDestination.c_str()), rightX + sectionPad, yRight, bodyFont, white); yRight += px(24);
-    DrawText(TextFormat("Resilience node: %s", tabState.nodeId), rightX + sectionPad, yRight, bodyFont, white); yRight += px(32);
-
-    if (tabState.hasTraversal) {
-        if (canDrawDetailLine(px(24))) {
-            DrawText(TextFormat("Traversal visited nodes: %d", tabState.lastTraversal.nodes_visited), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
-        }
-        if (canDrawDetailLine(px(28))) {
-            DrawText(TextFormat("Traversal time: %lld us", tabState.lastTraversal.elapsed_us), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(28);
-        }
-    }
-    if (tabState.hasPath) {
-        if (canDrawDetailLine(px(24))) {
-            DrawText(TextFormat("Path found: %s", tabState.lastPath.found ? "yes" : "no"), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
-        }
-        if (canDrawDetailLine(px(28))) {
-            DrawText(TextFormat("Path weight: %.2f", tabState.lastPath.total_weight), rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(28);
-        }
-    }
-    if (tabState.hasComparison) {
-        if (canDrawDetailLine(px(24))) {
-            DrawText(TextFormat("DFS reaches destination: %s", tabState.lastComparison.dfs_reaches_destination ? "yes" : "no"),
-                     rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
-        }
-        if (canDrawDetailLine(px(24))) {
-            DrawText(TextFormat("BFS reaches destination: %s", tabState.lastComparison.bfs_reaches_destination ? "yes" : "no"),
-                     rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(24);
-        }
-    }
-    if (canDrawDetailLine(px(30))) {
-        DrawText(TextFormat("Global connectivity: %s", resilienceService.isStillConnected() ? "connected" : "fragmented"),
-                 rightX + sectionPad, yRight, bodyFont, white); yRight += px(30);
-    }
-
-    DrawText("Route summary:", rightX + sectionPad, yRight, bodyFont, white); yRight += px(20);
-    const char* routeStatus = routeState.routeTravelCompleted
-        ? "completed"
-        : (routeState.routeActive ? "in progress" : "inactive");
-    const int rubricBlockMin = px(118); // titulo + tabs + label + area paginador
-    int routeAvail = pagerTopY - yRight - rubricBlockMin;
-    if (routeAvail < 0) routeAvail = 0;
-    int routeUsed = 0;
-    auto drawRouteLineIfFits = [&](const std::string& text, int step, Color color) {
-        if (routeUsed + step > routeAvail) return;
-        DrawText(text.c_str(), rightX + sectionPad, yRight, bodyMutedFont, color);
-        yRight += step;
-        routeUsed += step;
-    };
-
-    drawRouteLineIfFits(TextFormat("Status: %s", routeStatus), px(20), muted);
-    drawRouteLineIfFits(TextFormat("Progress: %.1f%%", routeState.routeProgressPct), px(20), muted);
-    const std::string elapsedLabel = RuntimeTextService::formatElapsedTime(routeState.routeTravelElapsed);
-    drawRouteLineIfFits(TextFormat("Elapsed: %s", elapsedLabel.c_str()), px(22), muted);
-    drawRouteLineIfFits(TextFormat("Blocked nodes: %d", static_cast<int>(blockedNodes.size())), px(22), muted);
-
-    DrawText("Rubric evidence:", rightX + sectionPad, yRight, bodyFont, white);
-    yRight += px(24);
-
-    const int tabBtnW = px(96);
-    const int tabBtnH = px(30);
-    Rectangle graphTab{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
-                       static_cast<float>(tabBtnW), static_cast<float>(tabBtnH)};
-    Rectangle dfsTab{static_cast<float>(rightX + sectionPad + tabBtnW + px(8)), static_cast<float>(yRight),
-                     static_cast<float>(tabBtnW), static_cast<float>(tabBtnH)};
-    Rectangle bfsTab{static_cast<float>(rightX + sectionPad + (tabBtnW + px(8)) * 2), static_cast<float>(yRight),
-                     static_cast<float>(tabBtnW), static_cast<float>(tabBtnH)};
-
-    if (drawRayButton(graphTab, "Graph", bodyMutedFont,
-                      state.rubricViewMode == 0 ? btnActive : btn,
-                      state.rubricViewMode == 0 ? btnActive : btnHover,
-                      btnActive, white)) state.rubricViewMode = 0;
-    if (drawRayButton(dfsTab, "DFS", bodyMutedFont,
-                      state.rubricViewMode == 1 ? btnActive : btn,
-                      state.rubricViewMode == 1 ? btnActive : btnHover,
-                      btnActive, white)) state.rubricViewMode = 1;
-    if (drawRayButton(bfsTab, "BFS", bodyMutedFont,
-                      state.rubricViewMode == 2 ? btnActive : btn,
-                      state.rubricViewMode == 2 ? btnActive : btnHover,
-                      btnActive, white)) state.rubricViewMode = 2;
-    yRight += tabBtnH + px(10);
-
-    std::vector<std::string> activeLines;
-    int* activePage = &state.graphViewPage;
-    if (state.rubricViewMode == 0) {
-        activeLines = RuntimeTextService::buildGraphOverviewLines(graph);
-        activePage = &state.graphViewPage;
-    } else if (state.rubricViewMode == 1) {
-        activeLines = RuntimeTextService::buildTraversalDetailLines(state.dfsTraversalView, "DFS order + accumulated distance");
-        activePage = &state.dfsViewPage;
-    } else {
-        activeLines = RuntimeTextService::buildTraversalDetailLines(state.bfsTraversalView, "BFS order + accumulated distance");
-        activePage = &state.bfsViewPage;
-    }
-
-    const int listBottomY = contentY + contentH - px(58);
-    const int lineHeight = px(20);
-    const int linesPerPage = std::max(1, (listBottomY - yRight) / lineHeight);
-    const int totalPages = std::max(1, static_cast<int>((activeLines.size() + linesPerPage - 1) / linesPerPage));
-    *activePage = std::clamp(*activePage, 0, totalPages - 1);
-    const int startIdx = (*activePage) * linesPerPage;
-    const int endIdx = std::min(static_cast<int>(activeLines.size()), startIdx + linesPerPage);
-
-    for (int i = startIdx; i < endIdx; ++i) {
-        DrawText(activeLines[i].c_str(), rightX + sectionPad, yRight, bodyMutedFont, muted);
-        yRight += lineHeight;
-    }
-
-    Rectangle prevPageBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(contentY + contentH - px(42)),
-                          static_cast<float>(px(36)), static_cast<float>(px(30))};
-    Rectangle nextPageBtn{static_cast<float>(rightX + sectionPad + px(140)), static_cast<float>(contentY + contentH - px(42)),
-                          static_cast<float>(px(36)), static_cast<float>(px(30))};
-    if (drawRayButton(prevPageBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
-        *activePage = std::max(0, *activePage - 1);
-    }
-    if (drawRayButton(nextPageBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
-        *activePage = std::min(totalPages - 1, *activePage + 1);
-    }
-    DrawText(TextFormat("Page %d/%d", *activePage + 1, totalPages),
-             rightX + sectionPad + px(48), contentY + contentH - px(36), bodyMutedFont, white);
 }
 
 void UIManager::renderLegacyImGuiOverlay(State& state,

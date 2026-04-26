@@ -27,6 +27,7 @@ public:
         bool showTriggers{false};
         bool showInterestZones{true};
         bool infoMenuOpen{false};
+        int activeMenuTab{0};
         TraversalResult dfsTraversalView;
         TraversalResult bfsTraversalView;
         int rubricViewMode{0};
@@ -92,7 +93,9 @@ private:
                         const std::function<std::string(const std::string&)>& sceneDisplayName,
                         const CampusGraph& graph,
                         TabManagerState& tabState,
+                        NavigationService& navService,
                         ScenarioManager& scenarioManager,
+                        ComplexityAnalyzer& complexityAnalyzer,
                         RuntimeBlockerService& runtimeBlockerService,
                         const DestinationCatalog& destinationCatalog,
                         MusicService& musicService,

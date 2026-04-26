@@ -1,6 +1,7 @@
 #include "ScenarioManager.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <limits>
 
 ScenarioManager::ScenarioManager() = default;
@@ -64,6 +65,48 @@ static std::string chooseMandatoryWaypoint(const CampusGraph& graph,
     return candidates.front();
 }
 
+static bool sameLevel(double a, double b) {
+    return std::abs(a - b) < 0.001;
+}
+
+static std::string findPoiInSameLevel(const CampusGraph& graph,
+                                      const std::vector<std::string>& preferredWaypoints,
+                                      const std::string& origin,
+                                      const std::string& destination,
+                                      double targetZ,
+                                      bool mobilityReduced) {
+    std::vector<std::string> candidates = preferredWaypoints;
+    if (candidates.empty()) {
+        candidates = collectPoiNodeIds(graph);
+    }
+
+    std::string bestWaypoint;
+    double bestCost = std::numeric_limits<double>::infinity();
+
+    for (const auto& waypointId : candidates) {
+        if (!graph.hasNode(waypointId) || waypointId == origin || waypointId == destination) continue;
+
+        try {
+            const Node& poiNode = graph.getNode(waypointId);
+            if (!sameLevel(poiNode.z, targetZ)) continue;
+
+            const PathResult toWaypoint = Algorithms::findPath(graph, origin, waypointId, mobilityReduced, false);
+            const PathResult fromWaypoint = Algorithms::findPath(graph, waypointId, destination, mobilityReduced, false);
+            if (!toWaypoint.found || !fromWaypoint.found) continue;
+
+            const double candidate = toWaypoint.total_weight + fromWaypoint.total_weight;
+            if (candidate < bestCost) {
+                bestCost = candidate;
+                bestWaypoint = waypointId;
+            }
+        } catch (...) {
+            continue;
+        }
+    }
+
+    return bestWaypoint;
+}
+
 bool ScenarioManager::isMobilityReduced() const {
     return mobility_reduced_ || student_type_ == StudentType::DISABLED_STUDENT;
 }
@@ -81,7 +124,28 @@ std::vector<std::string> ScenarioManager::applyProfile(const CampusGraph& graph,
         if (!mandatoryWaypoint.empty() &&
             mandatoryWaypoint != origin &&
             mandatoryWaypoint != destination) {
-            waypoints.push_back(mandatoryWaypoint);
+            try {
+                const Node& originNode = graph.getNode(origin);
+                const Node& destinationNode = graph.getNode(destination);
+                const Node& poiNode = graph.getNode(mandatoryWaypoint);
+
+                const bool originAndDestinationShareLevel = sameLevel(originNode.z, destinationNode.z);
+                const bool poiSharesLevelWithRoute = sameLevel(poiNode.z, originNode.z);
+
+                if (originAndDestinationShareLevel && !poiSharesLevelWithRoute) {
+                    const std::string sameLevelWaypoint = findPoiInSameLevel(
+                        graph, reference_waypoints_, origin, destination, originNode.z, isMobilityReduced());
+                    if (!sameLevelWaypoint.empty()) {
+                        waypoints.push_back(sameLevelWaypoint);
+                    } else {
+                        waypoints.push_back(mandatoryWaypoint);
+                    }
+                } else {
+                    waypoints.push_back(mandatoryWaypoint);
+                }
+            } catch (...) {
+                waypoints.push_back(mandatoryWaypoint);
+            }
         }
     }
 
