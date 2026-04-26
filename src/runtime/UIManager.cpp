@@ -454,6 +454,7 @@ void UIManager::renderScreen(const RenderContext& ctx,
     renderNavigationOverlayMenu(state.showNavigationGraph, state.infoMenuOpen, ctx.currentSceneName,
                                 scenarioManager.isMobilityReduced(), scenarioManager.getStudentType(),
                                 routeState.routeActive, routeState.routeProgressPct,
+                                routeState.routeTotalDistanceMeters, routeState.routeRemainingMeters,
                                 resilienceService.isStillConnected(), tabState,
                                 resilienceService.getBlockedNodes());
 
@@ -598,6 +599,8 @@ void UIManager::renderNavigationOverlayMenu(bool showNavigationGraph,
                                             StudentType studentType,
                                             bool routeActive,
                                             float routeProgressPct,
+                                            float routeTotalDistanceMeters,
+                                            float routeRemainingMeters,
                                             bool resilienceConnected,
                                             const TabManagerState& state,
                                             const std::vector<std::string>& blockedNodes) const {
@@ -624,6 +627,12 @@ void UIManager::renderNavigationOverlayMenu(bool showNavigationGraph,
              x + 12, cy, 21, resilienceConnected ? Color{150, 238, 180, 255} : Color{255, 160, 160, 255}); cy += 22;
     DrawText(TextFormat("Route: %s", routeActive ? "active" : "inactive"), x + 12, cy, 21, RAYWHITE); cy += 22;
     DrawText(TextFormat("Route progress: %.1f%%", routeProgressPct), x + 12, cy, 21, RAYWHITE); cy += 22;
+    if (routeActive) {
+        DrawText(TextFormat("Total distance: %.1f m", routeTotalDistanceMeters),
+                 x + 12, cy, 21, Color{200, 230, 255, 255}); cy += 22;
+        DrawText(TextFormat("Remaining: %.1f m", routeRemainingMeters),
+                 x + 12, cy, 21, Color{255, 220, 100, 255}); cy += 22;
+    }
     DrawText(TextFormat("Blocked nodes: %d", static_cast<int>(blockedNodes.size())), x + 12, cy, 21, Color{255, 224, 170, 255}); cy += 22;
     if (state.hasPath) {
         DrawText(TextFormat("Last path weight: %.2f", state.lastPath.total_weight), x + 12, cy, 21, Color{200, 225, 255, 255});
@@ -898,6 +907,12 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
     if (routeState.routeActive) {
         DrawText(TextFormat("Destination: %s", destinationCatalog.displayLabel(routeState.routeTargetNodeId).c_str()),
                  margin + sectionPad, yLeft, bodyFont, white);
+        yLeft += px(24);
+        DrawText(TextFormat("Distancia total: %.1f m", routeState.routeTotalDistanceMeters),
+                 margin + sectionPad, yLeft, bodyMutedFont, Color{200, 230, 255, 255});
+        yLeft += px(22);
+        DrawText(TextFormat("Distancia restante: %.1f m", routeState.routeRemainingMeters),
+                 margin + sectionPad, yLeft, bodyMutedFont, Color{255, 220, 100, 255});
         yLeft += px(24);
         DrawText(routeState.routeNextHint.c_str(), margin + sectionPad, yLeft, bodyMutedFont, muted);
         yLeft += px(28);

@@ -55,7 +55,9 @@ double euclideanMeters(const Vector2& from, const Vector2& to, double pixelsToMe
 
 bool isStairType(const std::string& type) {
     const std::string lowered = toLower(type);
-    return lowered.find("escalera") != std::string::npos || lowered.find("stair") != std::string::npos;
+    return lowered.find("escalera") != std::string::npos ||
+           lowered.find("escal") != std::string::npos ||
+           lowered.find("stair") != std::string::npos;
 }
 
 std::string sanitizeForId(const std::string& value) {

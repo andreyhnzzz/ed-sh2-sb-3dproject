@@ -9,11 +9,45 @@
 #include <unordered_map>
 
 namespace {
+constexpr float kPixelsToMeters = 0.10f;
+
 std::string canonicalSceneId(std::string sceneName) {
     std::transform(sceneName.begin(), sceneName.end(), sceneName.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
     return sceneName;
+}
+
+double edgeDistanceMeters(const CampusGraph& graph, const std::string& from, const std::string& to) {
+    if (!graph.hasNode(from) || !graph.hasNode(to)) return 0.0;
+    for (const auto& edge : graph.edgesFrom(from)) {
+        if (edge.to == to) return edge.base_weight;
+    }
+    return 0.0;
+}
+
+double calculatePathDistanceMeters(const CampusGraph& graph,
+                                   const std::vector<std::string>& pathNodes) {
+    if (pathNodes.size() < 2) return 0.0;
+
+    double totalMeters = 0.0;
+    for (size_t i = 1; i < pathNodes.size(); ++i) {
+        totalMeters += edgeDistanceMeters(graph, pathNodes[i - 1], pathNodes[i]);
+    }
+    return totalMeters;
+}
+
+double calculateRemainingDistanceMeters(const CampusGraph& graph,
+                                        const std::vector<std::string>& fullPath,
+                                        size_t currentIndex,
+                                        double currentLegRemainingMeters) {
+    double remaining = std::max(0.0, currentLegRemainingMeters);
+    if (fullPath.size() < 2 || currentIndex >= fullPath.size()) return remaining;
+
+    for (size_t i = currentIndex + 1; i + 1 < fullPath.size(); ++i) {
+        remaining += edgeDistanceMeters(graph, fullPath[i], fullPath[i + 1]);
+    }
+    return remaining;
 }
 
 bool hasPotentialLoop(const std::vector<std::string>& path) {
@@ -74,6 +108,8 @@ void RuntimeNavigationManager::activateSelectedRoute(RouteRuntimeState& state) c
     state.routeActive = true;
     state.routeTargetNodeId = destination->nodeId;
     state.routeProgressPct = 0.0f;
+    state.routeTotalDistanceMeters = 0.0f;
+    state.routeRemainingMeters = 0.0f;
     state.routeTravelElapsed = 0.0f;
     state.routeTravelCompleted = false;
     state.routeLegStartDistance = 0.0f;
@@ -91,6 +127,8 @@ void RuntimeNavigationManager::clearRoute(RouteRuntimeState& state, bool keepCom
     if (!keepCompletedFlag) {
         state.routeTargetNodeId.clear();
         state.routeProgressPct = 0.0f;
+        state.routeTotalDistanceMeters = 0.0f;
+        state.routeRemainingMeters = 0.0f;
         state.routeTravelElapsed = 0.0f;
     }
     if (!keepCompletedFlag) {
@@ -168,6 +206,8 @@ void RuntimeNavigationManager::refreshRoute(RouteRuntimeState& state,
     }
 
     if (routedPath.found && !routedPath.path.empty()) {
+        state.routeTotalDistanceMeters =
+            static_cast<float>(calculatePathDistanceMeters(graph, routedPath.path));
         if (state.routeScenePlan.empty()) {
             state.routeScenePlan = routedPath.path;
         } else {
@@ -211,6 +251,7 @@ void RuntimeNavigationManager::refreshRoute(RouteRuntimeState& state,
         const float localProgress =
             std::clamp(1.0f - (currentToGoal / state.routeLegStartDistance), 0.0f, 1.0f);
         state.routeProgressPct = std::clamp(localProgress * 100.0f, 0.0f, 100.0f);
+        state.routeRemainingMeters = currentToGoal * kPixelsToMeters;
         state.routePathPoints = WalkablePathService::buildWalkablePath(mapData, playerPos, destinationPoint);
         state.routeNextHint = currentToGoal <= kArrivalThreshold
             ? "Destino alcanzado"
@@ -219,6 +260,7 @@ void RuntimeNavigationManager::refreshRoute(RouteRuntimeState& state,
         if (currentToGoal <= kArrivalThreshold) {
             state.routeTravelCompleted = true;
             state.routeProgressPct = 100.0f;
+            state.routeRemainingMeters = 0.0f;
             state.routeNextHint = "Destino alcanzado";
             tabState.lastPath = {};
             tabState.hasPath = false;
@@ -228,12 +270,17 @@ void RuntimeNavigationManager::refreshRoute(RouteRuntimeState& state,
     }
 
     if (!routedPath.found || state.routeScenePlan.empty()) {
+        state.routeRemainingMeters = 0.0f;
         state.routeNextHint = "No hay conexion disponible";
         return;
     }
 
     const auto currentIt =
         std::find(state.routeScenePlan.begin(), state.routeScenePlan.end(), currentSceneId);
+    const size_t currentIndex =
+        currentIt != state.routeScenePlan.end()
+            ? static_cast<size_t>(std::distance(state.routeScenePlan.begin(), currentIt))
+            : 0U;
     const std::string nextNode =
         (currentIt != state.routeScenePlan.end() && std::next(currentIt) != state.routeScenePlan.end())
             ? *std::next(currentIt)
@@ -251,6 +298,10 @@ void RuntimeNavigationManager::refreshRoute(RouteRuntimeState& state,
         }
         const float localProgress =
             std::clamp(1.0f - (currentToGoal / state.routeLegStartDistance), 0.0f, 1.0f);
+        const double legMeters = edgeDistanceMeters(graph, currentSceneId, nextNode);
+        const double currentLegRemainingMeters = legMeters * static_cast<double>(1.0f - localProgress);
+        state.routeRemainingMeters = static_cast<float>(calculateRemainingDistanceMeters(
+            graph, state.routeScenePlan, currentIndex, currentLegRemainingMeters));
         const int totalLegs = std::max(1, static_cast<int>(state.routeScenePlan.size()) - 1);
         const int completedLegs =
             currentIt != state.routeScenePlan.end()
@@ -307,6 +358,15 @@ void RuntimeNavigationManager::refreshRoute(RouteRuntimeState& state,
             state.routeLegStartDistance = std::max(currentToGoal, 1.0f);
         }
         localProgress = std::clamp(1.0f - (currentToGoal / state.routeLegStartDistance), 0.0f, 1.0f);
+        const double legMeters = edgeDistanceMeters(graph, currentSceneId, nextNode);
+        const double currentLegRemainingMeters = legMeters > 0.0
+            ? legMeters * static_cast<double>(1.0f - localProgress)
+            : static_cast<double>(currentToGoal * kPixelsToMeters);
+        state.routeRemainingMeters = static_cast<float>(calculateRemainingDistanceMeters(
+            graph, state.routeScenePlan, currentIndex, currentLegRemainingMeters));
+    } else if (currentIt != state.routeScenePlan.end()) {
+        state.routeRemainingMeters = static_cast<float>(calculateRemainingDistanceMeters(
+            graph, state.routeScenePlan, currentIndex, 0.0));
     }
 
     const float overallProgress =

@@ -17,6 +17,8 @@ struct RouteRuntimeState {
     bool routeActive{false};
     std::string routeTargetNodeId;
     float routeProgressPct{0.0f};
+    float routeTotalDistanceMeters{0.0f};
+    float routeRemainingMeters{0.0f};
     float routeTravelElapsed{0.0f};
     bool routeTravelCompleted{false};
     float routeLegStartDistance{0.0f};

@@ -82,6 +82,8 @@ private:
                                      StudentType studentType,
                                      bool routeActive,
                                      float routeProgressPct,
+                                     float routeTotalDistanceMeters,
+                                     float routeRemainingMeters,
                                      bool resilienceConnected,
                                      const TabManagerState& state,
                                      const std::vector<std::string>& blockedNodes) const;

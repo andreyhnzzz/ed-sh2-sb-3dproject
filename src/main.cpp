@@ -722,7 +722,7 @@ int main(int argc, char* argv[]) {
             }
 
             const int panelW = 520;
-            const int panelH = 300;
+            const int panelH = 360;
             const Rectangle panelRect{
                 static_cast<float>((screenWidth - panelW) / 2),
                 static_cast<float>((screenHeight - panelH) / 2),
@@ -817,10 +817,42 @@ int main(int argc, char* argv[]) {
             drawMenuButton(startRect, "Iniciar Juego", menuSelection == 0);
             drawMenuButton(exitRect, "Salir", menuSelection == 1);
 
+            const float creditsDividerY = panelRect.y + panelRect.height - 76.0f;
+            DrawLine(static_cast<int>(panelRect.x + 24.0f), static_cast<int>(creditsDividerY),
+                     static_cast<int>(panelRect.x + panelRect.width - 24.0f), static_cast<int>(creditsDividerY),
+                     Color{100, 120, 160, 180});
+
+            const int creditsTitleSize = 18;
+            const std::string creditsTitle = "Desarrollado por";
+            const int creditsTitleW = MeasureText(creditsTitle.c_str(), creditsTitleSize);
+            DrawText(creditsTitle.c_str(),
+                     static_cast<int>(panelRect.x + (panelRect.width - creditsTitleW) * 0.5f),
+                     static_cast<int>(creditsDividerY + 8.0f),
+                     creditsTitleSize, Color{255, 230, 150, 255});
+
+            const int authorFontSize = 15;
+            const std::string authorOne = "Javier Mendoza Gonzalez";
+            const std::string authorTwo = "Andrey Hernandez Salazar";
+            DrawText(authorOne.c_str(),
+                     static_cast<int>(panelRect.x + (panelRect.width - MeasureText(authorOne.c_str(), authorFontSize)) * 0.5f),
+                     static_cast<int>(creditsDividerY + 28.0f),
+                     authorFontSize, Color{200, 210, 230, 220});
+            DrawText(authorTwo.c_str(),
+                     static_cast<int>(panelRect.x + (panelRect.width - MeasureText(authorTwo.c_str(), authorFontSize)) * 0.5f),
+                     static_cast<int>(creditsDividerY + 46.0f),
+                     authorFontSize, Color{200, 210, 230, 220});
+
+            const int yearFontSize = 16;
+            const std::string yearLabel = "2026";
+            DrawText(yearLabel.c_str(),
+                     static_cast<int>(panelRect.x + (panelRect.width - MeasureText(yearLabel.c_str(), yearFontSize)) * 0.5f),
+                     static_cast<int>(creditsDividerY + 64.0f),
+                     yearFontSize, Color{180, 190, 210, 200});
+
             DrawText("W/S o Flechas para elegir", static_cast<int>(panelRect.x + 28.0f),
-                     static_cast<int>(panelRect.y + panelRect.height - 34.0f), 18, Color{220, 230, 250, 245});
+                     static_cast<int>(panelRect.y + panelRect.height - 20.0f), 18, Color{220, 230, 250, 245});
             DrawText("Enter para confirmar", static_cast<int>(panelRect.x + panelRect.width - 212.0f),
-                     static_cast<int>(panelRect.y + panelRect.height - 34.0f), 18, Color{220, 230, 250, 245});
+                     static_cast<int>(panelRect.y + panelRect.height - 20.0f), 18, Color{220, 230, 250, 245});
             EndDrawing();
 
             continue;
