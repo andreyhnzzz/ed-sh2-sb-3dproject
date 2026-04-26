@@ -9223,12 +9223,46 @@
      ],
      "rotation": 0,
      "type": "",
-     "visible": true,
-     "width": 14,
-     "x": 104,
-     "y": 530
-    }
-   ],
+    "visible": true,
+    "width": 14,
+    "x": 104,
+    "y": 530
+   },
+   {
+    "height": 10,
+    "id": 81,
+    "name": "biblio_stairs_to_ext",
+    "opacity": 1,
+    "properties": [
+     {
+      "name": "portal_id",
+      "type": "string",
+      "value": "biblio_stairs_to_ext"
+     },
+     {
+      "name": "requires_e",
+      "type": "bool",
+      "value": true
+     },
+     {
+      "name": "to_scene",
+      "type": "string",
+      "value": "Exteriorcafeteria"
+     },
+     {
+      "name": "to_spawn",
+      "type": "string",
+      "value": "ext_from_biblio_stairs"
+     }
+    ],
+    "rotation": 0,
+    "type": "",
+    "visible": true,
+    "width": 16,
+    "x": 241,
+    "y": 562
+   }
+  ],
    "opacity": 1,
    "type": "objectgroup",
    "visible": true,
@@ -9253,12 +9287,31 @@
      ],
      "rotation": 0,
      "type": "",
-     "visible": true,
-     "width": 10,
-     "x": 111,
-     "y": 535
-    }
-   ],
+    "visible": true,
+    "width": 10,
+    "x": 111,
+    "y": 535
+   },
+   {
+    "height": 10,
+    "id": 82,
+    "name": "biblio_stairs_arrive",
+    "opacity": 1,
+    "properties": [
+     {
+      "name": "spawn_id",
+      "type": "string",
+      "value": "biblio_stairs_arrive"
+     }
+    ],
+    "rotation": 0,
+    "type": "",
+    "visible": true,
+    "width": 10,
+    "x": 241,
+    "y": 562
+   }
+  ],
    "opacity": 1,
    "type": "objectgroup",
    "visible": true,
@@ -9267,7 +9320,7 @@
   }
  ],
  "nextlayerid": 11,
- "nextobjectid": 81,
+"nextobjectid": 83,
  "orientation": "orthogonal",
  "renderorder": "right-down",
  "tiledversion": "1.12.1",
