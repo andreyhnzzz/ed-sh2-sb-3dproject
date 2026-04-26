@@ -36,7 +36,21 @@ public:
         int bfsViewPage{0};
         int selectedBlockedNodeIdx{0};
         int selectedBlockedEdgeIdx{0};
+        bool routeDropdownOpen{false};
+        bool audioPanelExpanded{false};
+        bool startNodeDropdownOpen{false};
+        bool endNodeDropdownOpen{false};
+        bool blockedNodeDropdownOpen{false};
+        bool blockedEdgeDropdownOpen{false};
+        bool menuTabDropdownOpen{false};
+        float analysisScroll{0.0f};
         float traversalRefreshCooldown{0.0f};
+        int routeDropdownScroll{0};
+        int startNodeDropdownScroll{0};
+        int endNodeDropdownScroll{0};
+        int blockedNodeDropdownScroll{0};
+        int blockedEdgeDropdownScroll{0};
+        int menuTabDropdownScroll{0};
     };
 
     void handleInput(const InputState& input, State& state) const;

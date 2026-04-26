@@ -172,6 +172,32 @@ bool comboSelectNode(const char* label,
     return changed;
 }
 
+bool drawHorizontalSlider(const Rectangle& track,
+                          float& value,
+                          float minValue,
+                          float maxValue,
+                          const Color& trackColor,
+                          const Color& fillColor,
+                          const Color& knobColor) {
+    const Vector2 mouse = GetMousePosition();
+    const bool hovered = CheckCollisionPointRec(mouse, track);
+    const bool dragging = hovered && IsMouseButtonDown(MOUSE_LEFT_BUTTON);
+    if (dragging && maxValue > minValue) {
+        const float ratio = std::clamp((mouse.x - track.x) / track.width, 0.0f, 1.0f);
+        value = minValue + (maxValue - minValue) * ratio;
+    }
+
+    DrawRectangleRounded(track, 0.45f, 8, trackColor);
+    const float ratio = (maxValue > minValue) ? std::clamp((value - minValue) / (maxValue - minValue), 0.0f, 1.0f)
+                                              : 0.0f;
+    Rectangle fill = track;
+    fill.width *= ratio;
+    DrawRectangleRounded(fill, 0.45f, 8, fillColor);
+    DrawCircleV(Vector2{track.x + ratio * track.width, track.y + track.height * 0.5f},
+                track.height * 0.42f, knobColor);
+    return dragging;
+}
+
 bool linkMatchesEdgeType(SceneLinkType linkType, const std::string& edgeType) {
     const std::string lowered = StringUtils::toLowerCopy(edgeType);
     switch (linkType) {
@@ -286,7 +312,7 @@ void drawCurrentSceneNavigationOverlay(const CampusGraph& graph,
                                                            StringUtils::toLowerCopy(link.toScene));
 
         const Color edgeColor = onActivePath
-            ? Color{70, 210, 255, 255}
+            ? Color{170, 95, 255, 255}
             : (edgeAllowed ? Color{170, 205, 255, 200} : Color{220, 90, 90, 180});
         DrawLineEx(scenePos, targetPos, onActivePath ? 4.0f : 2.0f, edgeColor);
         DrawCircleV(targetPos, 6.0f, edgeColor);
@@ -320,19 +346,19 @@ void drawCurrentSceneNavigationOverlay(const CampusGraph& graph,
         }
 
         const Color edgeColor = onActivePath
-            ? Color{255, 215, 70, 255}
-            : (edgeAllowed ? Color{255, 190, 60, 190} : Color{220, 90, 90, 220});
+            ? Color{180, 110, 255, 255}
+            : (edgeAllowed ? Color{170, 120, 255, 190} : Color{220, 90, 90, 220});
         DrawLineEx(scenePos, poiPos, onActivePath ? 3.0f : 1.5f, edgeColor);
         DrawCircleV(poiPos, 7.0f, edgeColor);
         DrawCircleLines(static_cast<int>(poiPos.x), static_cast<int>(poiPos.y), 7.0f,
-                        Color{255, 250, 210, 240});
+                        Color{235, 220, 255, 240});
 
         const Rectangle titleRect = poiEdge.collisionRects.empty()
             ? Rectangle{poiPos.x, poiPos.y, 0.0f, 0.0f}
             : poiEdge.collisionRects.front();
         const int poiLabelX = static_cast<int>(titleRect.x) + 6;
         const int poiLabelY = static_cast<int>(titleRect.y) + 24;
-        DrawText(poiEdge.label.c_str(), poiLabelX, poiLabelY, 12, Color{255, 228, 150, 245});
+        DrawText(poiEdge.label.c_str(), poiLabelX, poiLabelY, 12, Color{224, 205, 255, 245});
     }
 
     Color nodeColor = nodeLevelColor(currentSceneId);
@@ -383,7 +409,7 @@ void UIManager::renderWorld(const RenderContext& ctx,
             const Vector2 routeStart = routeLeadAnchor(ctx.playerPos, (*ctx.routePathPoints)[1]);
             for (size_t i = 1; i < ctx.routePathPoints->size(); ++i) {
                 const Vector2 a = (i == 1) ? routeStart : (*ctx.routePathPoints)[i - 1];
-                DrawLineEx(a, (*ctx.routePathPoints)[i], pulse, Color{255, 210, 70, 235});
+                DrawLineEx(a, (*ctx.routePathPoints)[i], pulse, Color{170, 95, 255, 235});
             }
         }
         if (ctx.dfsOverlayPathPoints && ctx.dfsOverlayPathPoints->size() >= 2) {
@@ -550,10 +576,10 @@ void UIManager::renderMinimap(const RenderContext& ctx, const std::vector<Rectan
             const Vector2 worldA = (i == 1) ? routeStart : (*ctx.routePathPoints)[i - 1];
             const Vector2 a = clampMiniPoint(worldToMini(worldA));
             const Vector2 b = clampMiniPoint(worldToMini((*ctx.routePathPoints)[i]));
-            DrawLineEx(a, b, 3.0f, Color{255, 210, 60, 240});
+            DrawLineEx(a, b, 3.0f, Color{170, 95, 255, 240});
         }
         const Vector2 goalMarker = clampMiniPoint(worldToMini(ctx.routePathPoints->back()));
-        DrawCircleV(goalMarker, 5.0f, Color{255, 180, 60, 240});
+        DrawCircleV(goalMarker, 5.0f, Color{184, 120, 255, 240});
         DrawCircleLines(static_cast<int>(goalMarker.x), static_cast<int>(goalMarker.y), 5.0f, BLACK);
     }
 
@@ -564,7 +590,7 @@ void UIManager::renderMinimap(const RenderContext& ctx, const std::vector<Rectan
     DrawRectangleLines(mapX - 2, mapY - 2, kMapW + 4, kMapH + 4, Color{80, 160, 255, 200});
     DrawText("Map", mapX + 4, mapY + 4, 12, Color{180, 220, 255, 220});
     if (ctx.routeActive) {
-        DrawText("Route active", mapX + 52, mapY + 4, 12, Color{255, 220, 120, 220});
+        DrawText("Route active", mapX + 52, mapY + 4, 12, Color{214, 180, 255, 220});
     }
 }
 
@@ -709,52 +735,6 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
         return node.name.empty() ? nodeId : (nodeId + " - " + node.name);
     };
 
-    auto drawNodeSelector = [&](const char* label,
-                                char* buffer,
-                                size_t bufferSize,
-                                int x,
-                                int& y,
-                                int width) {
-        DrawText(label, x, y, bodyFont, white);
-        y += px(22);
-
-        const int currentIndex = ensureNodeBuffer(buffer, bufferSize);
-        if (currentIndex < 0) {
-            DrawText("No hay nodos disponibles.", x, y, bodyMutedFont, muted);
-            y += px(28);
-            return;
-        }
-
-        const int arrowW = px(34);
-        Rectangle prevBtn{static_cast<float>(x), static_cast<float>(y),
-                          static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
-        Rectangle nextBtn{static_cast<float>(x + width - arrowW), static_cast<float>(y),
-                          static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
-        Rectangle labelBox{static_cast<float>(x + arrowW + px(6)), static_cast<float>(y),
-                           static_cast<float>(width - (arrowW * 2 + px(12))),
-                           static_cast<float>(buttonHeight)};
-
-        int nextIndex = currentIndex;
-        if (drawRayButton(prevBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
-            nextIndex = (currentIndex - 1 + static_cast<int>(nodeIds.size())) % static_cast<int>(nodeIds.size());
-            soundEffectService.play(SoundEffectType::BetweenOptions);
-        }
-        if (drawRayButton(nextBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
-            nextIndex = (currentIndex + 1) % static_cast<int>(nodeIds.size());
-            soundEffectService.play(SoundEffectType::BetweenOptions);
-        }
-        if (nextIndex != currentIndex) {
-            setBuffer(buffer, bufferSize, nodeIds[nextIndex]);
-        }
-
-        DrawRectangleRec(labelBox, Color{16, 34, 58, 255});
-        DrawRectangleLinesEx(labelBox, 1.5f, Color{80, 118, 170, 220});
-        const std::string display = nodeDisplayName(buffer);
-        DrawText(display.c_str(), static_cast<int>(labelBox.x + px(8)),
-                 static_cast<int>(labelBox.y + px(8)), bodyMutedFont, white);
-        y += px(46);
-    };
-
     auto drawPagedLines = [&](const std::vector<std::string>& lines,
                               int& page,
                               int x,
@@ -819,7 +799,177 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
         return;
     }
 
-    const int contentY = topH + margin;
+    auto closeAllDropdowns = [&]() {
+        state.routeDropdownOpen = false;
+        state.startNodeDropdownOpen = false;
+        state.endNodeDropdownOpen = false;
+        state.blockedNodeDropdownOpen = false;
+        state.blockedEdgeDropdownOpen = false;
+        state.menuTabDropdownOpen = false;
+    };
+
+    auto focusDropdownSelection = [&](int optionCount, int visibleCount, int selectedIndex, int& scrollIndex) {
+        const int safeVisible = std::max(1, visibleCount);
+        const int maxScroll = std::max(0, optionCount - safeVisible);
+        const int centered = std::max(0, selectedIndex - safeVisible / 2);
+        scrollIndex = std::clamp(centered, 0, maxScroll);
+    };
+
+    auto drawScrollableDropdown = [&](const std::vector<std::string>& options,
+                                      int& selectedIndex,
+                                      bool& dropdownOpen,
+                                      int& scrollIndex,
+                                      int x,
+                                      int& y,
+                                      int width,
+                                      const std::string& buttonLabel,
+                                      int buttonFont,
+                                      int maxVisible = 6) -> bool {
+        Rectangle selectorBtn{static_cast<float>(x), static_cast<float>(y),
+                              static_cast<float>(width), static_cast<float>(buttonHeight)};
+        if (drawRayButton(selectorBtn, buttonLabel.c_str(), buttonFont, btn, btnHover, btnActive, white)) {
+            const bool nextOpen = !dropdownOpen;
+            closeAllDropdowns();
+            dropdownOpen = nextOpen;
+            if (dropdownOpen) {
+                focusDropdownSelection(static_cast<int>(options.size()), maxVisible, selectedIndex, scrollIndex);
+            }
+            soundEffectService.play(SoundEffectType::SelectButton);
+        }
+        y += px(46);
+
+        if (!dropdownOpen || options.empty()) return false;
+
+        selectedIndex = std::clamp(selectedIndex, 0, static_cast<int>(options.size()) - 1);
+
+        const int visibleCount = std::min(static_cast<int>(options.size()), maxVisible);
+        const int maxScroll = std::max(0, static_cast<int>(options.size()) - visibleCount);
+        scrollIndex = std::clamp(scrollIndex, 0, maxScroll);
+
+        Rectangle dropdownBg{static_cast<float>(x), static_cast<float>(y),
+                             static_cast<float>(width),
+                             static_cast<float>(visibleCount * px(34) + px(30))};
+        if (CheckCollisionPointRec(GetMousePosition(), dropdownBg)) {
+            const int wheelSteps = static_cast<int>(std::round(GetMouseWheelMove()));
+            if (wheelSteps != 0) {
+                scrollIndex = std::clamp(scrollIndex - wheelSteps, 0, maxScroll);
+            }
+        }
+
+        DrawRectangleRec(dropdownBg, Color{14, 28, 48, 245});
+        DrawRectangleLinesEx(dropdownBg, 1.5f, Color{96, 112, 180, 220});
+
+        const int startIdx = scrollIndex;
+        const int endIdx = std::min(static_cast<int>(options.size()), startIdx + visibleCount);
+        for (int i = startIdx; i < endIdx; ++i) {
+            const int visualIndex = i - startIdx;
+            Rectangle optionRect{dropdownBg.x + px(4), dropdownBg.y + px(4) + visualIndex * px(34),
+                                 dropdownBg.width - px(8), static_cast<float>(px(30))};
+            const bool selected = selectedIndex == i;
+            if (drawRayButton(optionRect, options[i].c_str(), bodyMutedFont,
+                              selected ? btnActive : Color{24, 40, 64, 255}, btnHover, btnActive, white)) {
+                selectedIndex = i;
+                dropdownOpen = false;
+                soundEffectService.play(SoundEffectType::BetweenOptions);
+                return true;
+            }
+        }
+
+        const std::string footer = TextFormat("%d-%d / %d", startIdx + 1, endIdx, static_cast<int>(options.size()));
+        DrawText(footer.c_str(), x + px(8), y + visibleCount * px(34) + px(6), bodyMutedFont, muted);
+        if (maxScroll > 0) {
+            DrawText("Scroll", x + width - px(54), y + visibleCount * px(34) + px(6), bodyMutedFont, muted);
+        }
+        y += visibleCount * px(34) + px(34);
+        return false;
+    };
+
+    auto drawNodeSelector = [&](const char* label,
+                                char* buffer,
+                                size_t bufferSize,
+                                bool& dropdownOpen,
+                                int& dropdownScroll,
+                                int x,
+                                int& y,
+                                int width) {
+        DrawText(label, x, y, bodyFont, white);
+        y += px(22);
+
+        const int currentIndex = ensureNodeBuffer(buffer, bufferSize);
+        if (currentIndex < 0) {
+            DrawText("No hay nodos disponibles.", x, y, bodyMutedFont, muted);
+            y += px(28);
+            return;
+        }
+
+        const std::string display = nodeDisplayName(buffer);
+        const std::string selectorLabel = display + (dropdownOpen ? "  ^" : "  v");
+        std::vector<std::string> nodeOptions;
+        nodeOptions.reserve(nodeIds.size());
+        for (const auto& nodeId : nodeIds) {
+            nodeOptions.push_back(nodeDisplayName(nodeId));
+        }
+
+        int selectedIndex = currentIndex;
+        if (drawScrollableDropdown(nodeOptions, selectedIndex, dropdownOpen, dropdownScroll,
+                                   x, y, width, selectorLabel, bodyMutedFont)) {
+            setBuffer(buffer, bufferSize, nodeIds[selectedIndex]);
+        }
+    };
+
+    Rectangle audioToggleBtn{static_cast<float>(ctx.screenWidth - margin - px(160)), static_cast<float>(px(4)),
+                             static_cast<float>(px(110)), static_cast<float>(px(32))};
+    const std::string audioToggleLabel = std::string("Audio ") + (state.audioPanelExpanded ? "^" : "v");
+    if (drawRayButton(audioToggleBtn, audioToggleLabel.c_str(), bodyMutedFont,
+                      Color{26, 62, 115, 245}, Color{36, 81, 148, 255}, Color{60, 95, 155, 255}, white)) {
+        state.audioPanelExpanded = !state.audioPanelExpanded;
+        soundEffectService.play(SoundEffectType::SelectButton);
+    }
+
+    const int audioPanelH = state.audioPanelExpanded ? px(78) : 0;
+    if (state.audioPanelExpanded) {
+        Rectangle audioPanel{static_cast<float>(margin), static_cast<float>(topH + margin),
+                             static_cast<float>(ctx.screenWidth - margin * 2), static_cast<float>(audioPanelH)};
+        DrawRectangleRec(audioPanel, Color{14, 22, 36, 230});
+        DrawRectangleLinesEx(audioPanel, 2.0f, border);
+
+        const float musicVolume = AudioManager::getInstance().getMusicVolume();
+        const float sfxVolume = AudioManager::getInstance().getSFXVolume();
+        float newMusicVolume = musicVolume;
+        float newSfxVolume = sfxVolume;
+
+        DrawText("Audio", margin + sectionPad, static_cast<int>(audioPanel.y) + px(10), sectionTitleFont, white);
+        DrawText(TextFormat("Perfil: %s | Movilidad: %s",
+                            studentTypeToLabel(scenarioManager.getStudentType()),
+                            scenarioManager.isMobilityReduced() ? "reducida" : "normal"),
+                 margin + px(130), static_cast<int>(audioPanel.y) + px(14), bodyMutedFont, muted);
+
+        const int sliderY = static_cast<int>(audioPanel.y) + px(42);
+        DrawText("Musica", margin + sectionPad, sliderY - px(2), bodyFont, white);
+        Rectangle musicSlider{static_cast<float>(margin + px(98)), static_cast<float>(sliderY),
+                              static_cast<float>(px(240)), static_cast<float>(px(16))};
+        if (drawHorizontalSlider(musicSlider, newMusicVolume, 0.0f, 1.0f,
+                                 Color{34, 45, 68, 255}, Color{136, 92, 255, 255}, white)) {
+            musicService.setVolume(newMusicVolume);
+        }
+        DrawText(TextFormat("%d%%", static_cast<int>(std::round(newMusicVolume * 100.0f))),
+                 static_cast<int>(musicSlider.x + musicSlider.width + px(10)),
+                 sliderY - px(2), bodyMutedFont, muted);
+
+        const int sfxLabelX = margin + px(420);
+        DrawText("SFX", sfxLabelX, sliderY - px(2), bodyFont, white);
+        Rectangle sfxSlider{static_cast<float>(sfxLabelX + px(52)), static_cast<float>(sliderY),
+                            static_cast<float>(px(240)), static_cast<float>(px(16))};
+        if (drawHorizontalSlider(sfxSlider, newSfxVolume, 0.0f, 1.0f,
+                                 Color{34, 45, 68, 255}, Color{88, 196, 255, 255}, white)) {
+            soundEffectService.setVolume(newSfxVolume);
+        }
+        DrawText(TextFormat("%d%%", static_cast<int>(std::round(newSfxVolume * 100.0f))),
+                 static_cast<int>(sfxSlider.x + sfxSlider.width + px(10)),
+                 sliderY - px(2), bodyMutedFont, muted);
+    }
+
+    const int contentY = topH + margin + audioPanelH + (state.audioPanelExpanded ? margin : 0);
     const int contentH = ctx.screenHeight - contentY - margin;
     const int leftW = static_cast<int>(ctx.screenWidth * 0.28f);
     const int rightX = margin + leftW + margin;
@@ -839,35 +989,33 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
     DrawLine(margin + px(12), yLeft, margin + leftW - px(12), yLeft, Color{85, 98, 122, 255});
     yLeft += sectionPad;
 
-    Rectangle prevBtn{static_cast<float>(margin + sectionPad), static_cast<float>(yLeft),
-                      static_cast<float>(px(36)), static_cast<float>(buttonHeight)};
-    Rectangle nextBtn{static_cast<float>(margin + leftW - sectionPad - px(36)), static_cast<float>(yLeft),
-                      static_cast<float>(px(36)), static_cast<float>(buttonHeight)};
-    Rectangle labelBox{static_cast<float>(margin + sectionPad + px(42)), static_cast<float>(yLeft),
-                       static_cast<float>(leftW - (sectionPad * 2 + px(84))), static_cast<float>(buttonHeight)};
+    Rectangle routeSelectBtn{static_cast<float>(margin + sectionPad), static_cast<float>(yLeft),
+                             static_cast<float>(leftW - sectionPad * 2), static_cast<float>(buttonHeight)};
 
     std::string selectedLabel = "(sin destinos)";
     if (!routeScenes.empty()) {
         routeState.selectedDestinationIdx =
             std::clamp(routeState.selectedDestinationIdx, 0, static_cast<int>(routeScenes.size()) - 1);
-        if (drawRayButton(prevBtn, "<", px(20), btn, btnHover, btnActive, white)) {
-            routeState.selectedDestinationIdx =
-                (routeState.selectedDestinationIdx - 1 + static_cast<int>(routeScenes.size())) %
-                static_cast<int>(routeScenes.size());
-            soundEffectService.play(SoundEffectType::BetweenOptions);
-        }
-        if (drawRayButton(nextBtn, ">", px(20), btn, btnHover, btnActive, white)) {
-            routeState.selectedDestinationIdx =
-                (routeState.selectedDestinationIdx + 1) % static_cast<int>(routeScenes.size());
-            soundEffectService.play(SoundEffectType::BetweenOptions);
-        }
         selectedLabel = routeScenes[routeState.selectedDestinationIdx].second;
     }
 
-    DrawRectangleRec(labelBox, Color{16, 34, 58, 255});
-    DrawRectangleLinesEx(labelBox, 1.5f, Color{80, 118, 170, 220});
-    DrawText(selectedLabel.c_str(), static_cast<int>(labelBox.x + px(10)), static_cast<int>(labelBox.y + px(8)), bodyFont, white);
-    yLeft += px(46);
+    std::string routeSelectLabel = "Destino: " + selectedLabel + (state.routeDropdownOpen ? "  ^" : "  v");
+    if (!routeScenes.empty()) {
+        std::vector<std::string> routeLabels;
+        routeLabels.reserve(routeScenes.size());
+        for (const auto& routeScene : routeScenes) {
+            routeLabels.push_back(routeScene.second);
+        }
+        drawScrollableDropdown(routeLabels, routeState.selectedDestinationIdx,
+                               state.routeDropdownOpen, state.routeDropdownScroll,
+                               margin + sectionPad, yLeft, leftW - sectionPad * 2,
+                               routeSelectLabel, bodyFont);
+    } else {
+        if (drawRayButton(routeSelectBtn, routeSelectLabel.c_str(), bodyFont, btn, btnHover, btnActive, white)) {
+            soundEffectService.play(SoundEffectType::SelectButton);
+        }
+        yLeft += px(46);
+    }
 
     Rectangle drawRouteBtn{static_cast<float>(margin + sectionPad), static_cast<float>(yLeft),
                            static_cast<float>(px(140)), static_cast<float>(buttonHeight)};
@@ -933,33 +1081,45 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
              rightX + sectionPad, yRight, bodyMutedFont, muted);
     yRight += px(28);
 
-    const char* menuTabs[] = {"Mapa", "DFS", "BFS", "Conexo", "Camino", "Escenarios", "Complejidad", "Fallos"};
-    const int tabGap = px(6);
-    const int tabRows = 2;
-    const int tabCols = 4;
-    const int tabBtnW = (rightW - sectionPad * 2 - tabGap * (tabCols - 1)) / tabCols;
-    const int tabBtnH = px(32);
-    for (int i = 0; i < 8; ++i) {
-        const int row = i / tabCols;
-        const int col = i % tabCols;
-        Rectangle tabRect{
-            static_cast<float>(rightX + sectionPad + col * (tabBtnW + tabGap)),
-            static_cast<float>(yRight + row * (tabBtnH + tabGap)),
-            static_cast<float>(tabBtnW),
-            static_cast<float>(tabBtnH)
-        };
-        if (drawRayButton(tabRect, menuTabs[i], bodyMutedFont,
-                          state.activeMenuTab == i ? btnActive : btn,
-                          state.activeMenuTab == i ? btnActive : btnHover,
-                          btnActive, white)) {
-            state.activeMenuTab = i;
-            soundEffectService.play(SoundEffectType::SelectButton);
+    const std::vector<std::string> menuTabs{
+        "Mapa", "DFS", "BFS", "Conexo", "Camino", "Escenarios", "Complejidad", "Fallos"
+    };
+    state.activeMenuTab = std::clamp(state.activeMenuTab, 0, static_cast<int>(menuTabs.size()) - 1);
+    DrawText("Seccion:", rightX + sectionPad, yRight, bodyFont, white);
+    yRight += px(22);
+    const std::string tabDropdownLabel =
+        menuTabs[state.activeMenuTab] + (state.menuTabDropdownOpen ? "  ^" : "  v");
+    const int previousTab = state.activeMenuTab;
+    if (drawScrollableDropdown(menuTabs, state.activeMenuTab,
+                               state.menuTabDropdownOpen, state.menuTabDropdownScroll,
+                               rightX + sectionPad, yRight, rightW - sectionPad * 2,
+                               tabDropdownLabel, bodyMutedFont, 7)) {
+        if (state.activeMenuTab != previousTab) {
+            state.analysisScroll = 0.0f;
+            closeAllDropdowns();
         }
     }
-    yRight += tabRows * tabBtnH + tabGap + px(16);
+    yRight += px(6);
 
     const int contentX = rightX + sectionPad;
     const int contentW = rightW - sectionPad * 2;
+    const int rightViewportTop = yRight;
+    const int rightViewportHeight = std::max(px(180), contentH - (rightViewportTop - contentY) - sectionPad);
+    const Rectangle rightViewport{static_cast<float>(contentX), static_cast<float>(rightViewportTop),
+                                  static_cast<float>(contentW), static_cast<float>(rightViewportHeight)};
+    const bool anyDropdownOpen = state.routeDropdownOpen || state.startNodeDropdownOpen ||
+                                 state.endNodeDropdownOpen || state.blockedNodeDropdownOpen ||
+                                 state.blockedEdgeDropdownOpen || state.menuTabDropdownOpen;
+    if (!anyDropdownOpen && CheckCollisionPointRec(GetMousePosition(), rightViewport)) {
+        const float wheel = GetMouseWheelMove();
+        if (std::fabs(wheel) > 0.01f) {
+            state.analysisScroll = std::max(0.0f, state.analysisScroll - wheel * static_cast<float>(px(34)));
+        }
+    }
+    const int scrollBaseY = yRight - static_cast<int>(std::round(state.analysisScroll));
+    yRight = scrollBaseY;
+
+    BeginScissorMode(contentX, rightViewportTop, contentW, rightViewportHeight);
 
     switch (state.activeMenuTab) {
         case 0: {
@@ -1011,7 +1171,7 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             DrawCircle(static_cast<int>(legend.x) + px(18), ly + px(6), 5, Color{90, 180, 255, 235});
             DrawText("Nodo normal", static_cast<int>(legend.x) + px(32), ly, bodyMutedFont, muted);
             ly += px(20);
-            DrawCircle(static_cast<int>(legend.x) + px(18), ly + px(6), 5, Color{255, 215, 0, 220});
+            DrawCircle(static_cast<int>(legend.x) + px(18), ly + px(6), 5, Color{170, 95, 255, 220});
             DrawText("Nodo destacado en ruta", static_cast<int>(legend.x) + px(32), ly, bodyMutedFont, muted);
             ly += px(20);
             DrawCircle(static_cast<int>(legend.x) + px(18), ly + px(6), 5, Color{230, 90, 90, 240});
@@ -1022,7 +1182,9 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
         case 1: {
             DrawText("Recorrido DFS", contentX, yRight, sectionTitleFont, white);
             yRight += px(30);
-            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
+            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId),
+                             state.startNodeDropdownOpen, state.startNodeDropdownScroll,
+                             contentX, yRight, px(320));
 
             Rectangle execBtn{static_cast<float>(contentX), static_cast<float>(yRight),
                               static_cast<float>(px(180)), static_cast<float>(buttonHeight)};
@@ -1058,7 +1220,9 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
         case 2: {
             DrawText("Recorrido BFS", contentX, yRight, sectionTitleFont, white);
             yRight += px(30);
-            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
+            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId),
+                             state.startNodeDropdownOpen, state.startNodeDropdownScroll,
+                             contentX, yRight, px(320));
 
             Rectangle execBtn{static_cast<float>(contentX), static_cast<float>(yRight),
                               static_cast<float>(px(180)), static_cast<float>(buttonHeight)};
@@ -1102,12 +1266,13 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
                               static_cast<float>(px(240)), static_cast<float>(buttonHeight)};
             if (drawRayButton(connBtn, "Verificar Conexidad", bodyFont, btn, btnHover, btnActive, white)) {
                 tabState.lastConnected = navService.checkConnectivity();
+                tabState.hasConnectivityResult = true;
                 tabState.lastAction = "Connectivity";
                 soundEffectService.play(SoundEffectType::RouteFixated);
             }
             yRight += px(48);
 
-            if (tabState.lastAction == "Connectivity") {
+            if (tabState.hasConnectivityResult) {
                 DrawText(tabState.lastConnected ? "RESULTADO: CAMPUS CONEXO" : "RESULTADO: CAMPUS NO CONEXO",
                          contentX, yRight, bodyFont, tabState.lastConnected ? good : bad);
                 yRight += px(28);
@@ -1135,8 +1300,12 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
         case 4: {
             DrawText("Buscar Camino entre Dos Puntos", contentX, yRight, sectionTitleFont, white);
             yRight += px(30);
-            drawNodeSelector("Origen:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
-            drawNodeSelector("Destino:", tabState.endId, sizeof(tabState.endId), contentX, yRight, px(320));
+            drawNodeSelector("Origen:", tabState.startId, sizeof(tabState.startId),
+                             state.startNodeDropdownOpen, state.startNodeDropdownScroll,
+                             contentX, yRight, px(320));
+            drawNodeSelector("Destino:", tabState.endId, sizeof(tabState.endId),
+                             state.endNodeDropdownOpen, state.endNodeDropdownScroll,
+                             contentX, yRight, px(320));
 
             Rectangle directBtn{static_cast<float>(contentX), static_cast<float>(yRight),
                                 static_cast<float>(px(200)), static_cast<float>(buttonHeight)};
@@ -1254,8 +1423,12 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
         case 6: {
             DrawText("Analisis de Complejidad: BFS vs DFS", contentX, yRight, sectionTitleFont, white);
             yRight += px(30);
-            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
-            drawNodeSelector("Nodo destino:", tabState.endId, sizeof(tabState.endId), contentX, yRight, px(320));
+            drawNodeSelector("Nodo de inicio:", tabState.startId, sizeof(tabState.startId),
+                             state.startNodeDropdownOpen, state.startNodeDropdownScroll,
+                             contentX, yRight, px(320));
+            drawNodeSelector("Nodo destino:", tabState.endId, sizeof(tabState.endId),
+                             state.endNodeDropdownOpen, state.endNodeDropdownScroll,
+                             contentX, yRight, px(320));
 
             Rectangle analyzeBtn{static_cast<float>(contentX), static_cast<float>(yRight),
                                  static_cast<float>(px(280)), static_cast<float>(buttonHeight)};
@@ -1269,7 +1442,7 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             }
             yRight += px(48);
 
-            if (tabState.hasComparison && tabState.lastAction == "Complexity") {
+            if (tabState.hasComparison) {
                 DrawText("Algoritmo", contentX, yRight, bodyFont, white);
                 DrawText("Nodos", contentX + px(140), yRight, bodyFont, white);
                 DrawText("Tiempo (us)", contentX + px(260), yRight, bodyFont, white);
@@ -1336,8 +1509,12 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             DrawText("Puntos de Fallos y Bloqueos", contentX, yRight, sectionTitleFont, white);
             yRight += px(30);
 
-            drawNodeSelector("Origen alterno:", tabState.startId, sizeof(tabState.startId), contentX, yRight, px(320));
-            drawNodeSelector("Destino alterno:", tabState.endId, sizeof(tabState.endId), contentX, yRight, px(320));
+            drawNodeSelector("Origen alterno:", tabState.startId, sizeof(tabState.startId),
+                             state.startNodeDropdownOpen, state.startNodeDropdownScroll,
+                             contentX, yRight, px(320));
+            drawNodeSelector("Destino alterno:", tabState.endId, sizeof(tabState.endId),
+                             state.endNodeDropdownOpen, state.endNodeDropdownScroll,
+                             contentX, yRight, px(320));
 
             const auto& blockNodeOptions = runtimeBlockerService.nodeOptions();
             const auto& blockEdgeOptions = runtimeBlockerService.edgeOptions();
@@ -1347,31 +1524,15 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             if (!blockNodeOptions.empty()) {
                 state.selectedBlockedNodeIdx =
                     std::clamp(state.selectedBlockedNodeIdx, 0, static_cast<int>(blockNodeOptions.size()) - 1);
-                const int arrowW = px(34);
-                Rectangle prevBtn{static_cast<float>(contentX), static_cast<float>(yRight),
-                                  static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
-                Rectangle nextBtn{static_cast<float>(contentX + px(320) - arrowW), static_cast<float>(yRight),
-                                  static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
-                Rectangle labelBox{static_cast<float>(contentX + arrowW + px(6)), static_cast<float>(yRight),
-                                   static_cast<float>(px(320) - (arrowW * 2 + px(12))),
-                                   static_cast<float>(buttonHeight)};
-                if (drawRayButton(prevBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
-                    state.selectedBlockedNodeIdx =
-                        (state.selectedBlockedNodeIdx - 1 + static_cast<int>(blockNodeOptions.size())) %
-                        static_cast<int>(blockNodeOptions.size());
-                    soundEffectService.play(SoundEffectType::BetweenOptions);
-                }
-                if (drawRayButton(nextBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
-                    state.selectedBlockedNodeIdx =
-                        (state.selectedBlockedNodeIdx + 1) % static_cast<int>(blockNodeOptions.size());
-                    soundEffectService.play(SoundEffectType::BetweenOptions);
-                }
-                DrawRectangleRec(labelBox, Color{16, 34, 58, 255});
-                DrawRectangleLinesEx(labelBox, 1.5f, Color{80, 118, 170, 220});
-                DrawText(blockNodeOptions[state.selectedBlockedNodeIdx].label.c_str(),
-                         static_cast<int>(labelBox.x + px(8)), static_cast<int>(labelBox.y + px(8)),
-                         bodyMutedFont, white);
-                yRight += px(46);
+                const std::string blockNodeLabel =
+                    blockNodeOptions[state.selectedBlockedNodeIdx].label +
+                    (state.blockedNodeDropdownOpen ? "  ^" : "  v");
+                std::vector<std::string> blockNodeLabels;
+                blockNodeLabels.reserve(blockNodeOptions.size());
+                for (const auto& option : blockNodeOptions) blockNodeLabels.push_back(option.label);
+                drawScrollableDropdown(blockNodeLabels, state.selectedBlockedNodeIdx,
+                                       state.blockedNodeDropdownOpen, state.blockedNodeDropdownScroll,
+                                       contentX, yRight, px(320), blockNodeLabel, bodyMutedFont);
             }
 
             DrawText("Conexion para bloquear:", contentX, yRight, bodyFont, white);
@@ -1379,31 +1540,15 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             if (!blockEdgeOptions.empty()) {
                 state.selectedBlockedEdgeIdx =
                     std::clamp(state.selectedBlockedEdgeIdx, 0, static_cast<int>(blockEdgeOptions.size()) - 1);
-                const int arrowW = px(34);
-                Rectangle prevBtn{static_cast<float>(contentX), static_cast<float>(yRight),
-                                  static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
-                Rectangle nextBtn{static_cast<float>(contentX + contentW - arrowW), static_cast<float>(yRight),
-                                  static_cast<float>(arrowW), static_cast<float>(buttonHeight)};
-                Rectangle labelBox{static_cast<float>(contentX + arrowW + px(6)), static_cast<float>(yRight),
-                                   static_cast<float>(contentW - (arrowW * 2 + px(12))),
-                                   static_cast<float>(buttonHeight)};
-                if (drawRayButton(prevBtn, "<", bodyFont, btn, btnHover, btnActive, white)) {
-                    state.selectedBlockedEdgeIdx =
-                        (state.selectedBlockedEdgeIdx - 1 + static_cast<int>(blockEdgeOptions.size())) %
-                        static_cast<int>(blockEdgeOptions.size());
-                    soundEffectService.play(SoundEffectType::BetweenOptions);
-                }
-                if (drawRayButton(nextBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
-                    state.selectedBlockedEdgeIdx =
-                        (state.selectedBlockedEdgeIdx + 1) % static_cast<int>(blockEdgeOptions.size());
-                    soundEffectService.play(SoundEffectType::BetweenOptions);
-                }
-                DrawRectangleRec(labelBox, Color{16, 34, 58, 255});
-                DrawRectangleLinesEx(labelBox, 1.5f, Color{80, 118, 170, 220});
-                DrawText(blockEdgeOptions[state.selectedBlockedEdgeIdx].label.c_str(),
-                         static_cast<int>(labelBox.x + px(8)), static_cast<int>(labelBox.y + px(8)),
-                         bodyMutedFont, white);
-                yRight += px(46);
+                const std::string blockEdgeLabel =
+                    blockEdgeOptions[state.selectedBlockedEdgeIdx].label +
+                    (state.blockedEdgeDropdownOpen ? "  ^" : "  v");
+                std::vector<std::string> blockEdgeLabels;
+                blockEdgeLabels.reserve(blockEdgeOptions.size());
+                for (const auto& option : blockEdgeOptions) blockEdgeLabels.push_back(option.label);
+                drawScrollableDropdown(blockEdgeLabels, state.selectedBlockedEdgeIdx,
+                                       state.blockedEdgeDropdownOpen, state.blockedEdgeDropdownScroll,
+                                       contentX, yRight, contentW, blockEdgeLabel, bodyMutedFont);
             }
 
             Rectangle blockNodeBtn{static_cast<float>(contentX), static_cast<float>(yRight),
@@ -1480,40 +1625,15 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             break;
     }
 
-    const float musicVolume = AudioManager::getInstance().getMusicVolume();
-    const float sfxVolume = AudioManager::getInstance().getSFXVolume();
-    const int footerY = contentY + contentH - px(38);
-    DrawText(TextFormat("Musica %d%% | SFX %d%% | Perfil %s | Movilidad %s",
-                        static_cast<int>(std::round(musicVolume * 100.0f)),
-                        static_cast<int>(std::round(sfxVolume * 100.0f)),
-                        studentTypeToLabel(scenarioManager.getStudentType()),
-                        scenarioManager.isMobilityReduced() ? "reducida" : "normal"),
-             rightX + sectionPad, footerY, bodyMutedFont, muted);
+    EndScissorMode();
+    const int contentUsedHeight = std::max(0, yRight - scrollBaseY + px(24));
+    const float maxScroll = static_cast<float>(std::max(0, contentUsedHeight - rightViewportHeight));
+    state.analysisScroll = std::clamp(state.analysisScroll, 0.0f, maxScroll);
+    if (maxScroll > 0.0f) {
+        DrawText("Scroll con rueda para ver mas", contentX, rightViewportTop + rightViewportHeight - px(22),
+                 bodyMutedFont, Color{185, 170, 235, 220});
+    }
 
-    Rectangle musicDownBtn{static_cast<float>(rightX + rightW - px(160)), static_cast<float>(footerY - px(6)),
-                           static_cast<float>(px(28)), static_cast<float>(px(28))};
-    Rectangle musicUpBtn{static_cast<float>(rightX + rightW - px(128)), static_cast<float>(footerY - px(6)),
-                         static_cast<float>(px(28)), static_cast<float>(px(28))};
-    Rectangle sfxDownBtn{static_cast<float>(rightX + rightW - px(78)), static_cast<float>(footerY - px(6)),
-                         static_cast<float>(px(28)), static_cast<float>(px(28))};
-    Rectangle sfxUpBtn{static_cast<float>(rightX + rightW - px(46)), static_cast<float>(footerY - px(6)),
-                       static_cast<float>(px(28)), static_cast<float>(px(28))};
-    if (drawRayButton(musicDownBtn, "-", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        musicService.setVolume(musicVolume - 0.05f);
-        soundEffectService.play(SoundEffectType::BetweenOptions);
-    }
-    if (drawRayButton(musicUpBtn, "+", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        musicService.setVolume(musicVolume + 0.05f);
-        soundEffectService.play(SoundEffectType::BetweenOptions);
-    }
-    if (drawRayButton(sfxDownBtn, "-", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        soundEffectService.setVolume(sfxVolume - 0.05f);
-        soundEffectService.play(SoundEffectType::BetweenOptions);
-    }
-    if (drawRayButton(sfxUpBtn, "+", bodyMutedFont, btn, btnHover, btnActive, white)) {
-        soundEffectService.setVolume(sfxVolume + 0.05f);
-        soundEffectService.play(SoundEffectType::BetweenOptions);
-    }
 }
 
 void UIManager::renderLegacyImGuiOverlay(State& state,
@@ -1595,6 +1715,7 @@ void UIManager::renderLegacyImGuiOverlay(State& state,
     ImGui::SameLine();
     if (ImGui::Button("Verificar Conexidad", ImVec2(170, 0))) {
         tabState.lastConnected = navService.checkConnectivity();
+        tabState.hasConnectivityResult = true;
         tabState.lastAction = "Connectivity";
     }
 

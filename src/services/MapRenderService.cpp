@@ -42,9 +42,9 @@ void MapRenderService::drawInterestZones(const std::vector<InterestZone>& zones)
         if (!zone.rects.empty()) {
             marker.x /= static_cast<float>(zone.rects.size());
             marker.y /= static_cast<float>(zone.rects.size());
-            DrawCircleV(marker, 7.0f, Color{255, 190, 40, 235});
+            DrawCircleV(marker, 7.0f, Color{170, 95, 255, 235});
             DrawCircleLines(static_cast<int>(marker.x), static_cast<int>(marker.y), 7.0f,
-                            Color{255, 245, 180, 240});
+                            Color{232, 214, 255, 240});
         }
     }
 }

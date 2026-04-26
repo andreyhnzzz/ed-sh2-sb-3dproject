@@ -39,6 +39,7 @@ struct TabManagerState {
     std::vector<AlgorithmStats> lastStats;
     AlgorithmComparison lastComparison;
     bool hasComparison{false};
+    bool hasConnectivityResult{false};
     std::string lastAction;
 
     CampusValidationReport validation;
