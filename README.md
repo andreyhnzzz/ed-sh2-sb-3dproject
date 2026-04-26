@@ -1,6 +1,14 @@
 # EcoCampusNav
 
 > Navegacion inteligente para campus universitario en `C++17` con `raylib`, `ImGui` y arquitectura modular orientada a runtime.
+>
+> ## Stack
+![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-3.20%2B-064F8C?style=for-the-badge&logo=cmake&logoColor=white)
+![raylib](https://img.shields.io/badge/raylib-2D%20Runtime-000000?style=for-the-badge&logo=raylib&logoColor=white)
+![ImGui](https://img.shields.io/badge/ImGui-Dear%20ImGui-5A4FCF?style=for-the-badge)
+![JSON](https://img.shields.io/badge/JSON-nlohmann-000000?style=for-the-badge&logo=json&logoColor=white)
+![CLion](https://img.shields.io/badge/CLion-IDE-000000?style=for-the-badge&logo=clion&logoColor=white)
 
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.20%2B-064F8C?style=for-the-badge&logo=cmake&logoColor=white)
