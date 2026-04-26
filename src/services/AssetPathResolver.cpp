@@ -41,6 +41,22 @@ std::string AssetPathResolver::resolveAssetPath(const char* argv0, const std::st
     });
 }
 
+std::string AssetPathResolver::resolveMusicPath(const char* argv0, const std::string& musicFile) {
+    return findPathCandidate(argv0, {
+        fs::path("assets/music") / musicFile,
+        fs::path("../assets/music") / musicFile,
+        fs::path("../../assets/music") / musicFile
+    });
+}
+
+std::string AssetPathResolver::resolveSFXPath(const char* argv0, const std::string& sfxFile) {
+    return findPathCandidate(argv0, {
+        fs::path("assets/sound_effects") / sfxFile,
+        fs::path("../assets/sound_effects") / sfxFile,
+        fs::path("../../assets/sound_effects") / sfxFile
+    });
+}
+
 std::string AssetPathResolver::findPlayerIdleSprite(const char* argv0) {
     return findPathCandidate(argv0, {
         fs::path("assets/sprites/m_Character/junior_AnguloIdle.png"),

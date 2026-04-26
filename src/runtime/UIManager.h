@@ -6,9 +6,11 @@
 #include "services/ComplexityAnalyzer.h"
 #include "services/DestinationCatalog.h"
 #include "services/NavigationService.h"
+#include "services/MusicService.h"
 #include "services/ResilienceService.h"
 #include "services/RuntimeBlockerService.h"
 #include "services/ScenarioManager.h"
+#include "services/SoundEffectService.h"
 #include "services/TransitionService.h"
 #include "ui/TabManager.h"
 
@@ -62,6 +64,8 @@ public:
                       ComplexityAnalyzer& complexityAnalyzer,
                       RuntimeBlockerService& runtimeBlockerService,
                       const DestinationCatalog& destinationCatalog,
+                      MusicService& musicService,
+                      SoundEffectService& soundEffectService,
                       ResilienceService& resilienceService,
                       TransitionService& transitions,
                       const std::unordered_map<std::string, SceneData>& sceneDataMap) const;
@@ -91,6 +95,8 @@ private:
                         ScenarioManager& scenarioManager,
                         RuntimeBlockerService& runtimeBlockerService,
                         const DestinationCatalog& destinationCatalog,
+                        MusicService& musicService,
+                        SoundEffectService& soundEffectService,
                         ResilienceService& resilienceService) const;
 
     void renderLegacyImGuiOverlay(State& state,

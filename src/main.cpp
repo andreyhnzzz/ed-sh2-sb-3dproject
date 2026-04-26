@@ -20,7 +20,9 @@
 #include "runtime/RuntimeNavigationManager.h"
 #include "runtime/SceneManager.h"
 #include "runtime/UIManager.h"
+#include "services/AudioManager.h"
 #include "services/AssetPathResolver.h"
+#include "services/MusicService.h"
 #include "services/ComplexityAnalyzer.h"
 #include "services/DataManager.h"
 #include "services/DestinationCatalog.h"
@@ -31,6 +33,7 @@
 #include "services/RuntimeBlockerService.h"
 #include "services/ScenarioManager.h"
 #include "services/ScenePlanService.h"
+#include "services/SoundEffectService.h"
 #include "services/StringUtils.h"
 #include "services/TmjLoader.h"
 #include "services/TransitionService.h"
@@ -58,6 +61,32 @@ int main(int argc, char* argv[]) {
     ToggleFullscreen();
     SetTargetFPS(60);
     rlImGuiSetup(true);
+    AudioManager::getInstance().initialize();
+
+    MusicService musicService;
+    SoundEffectService soundEffectService;
+    musicService.loadMusic("main_menu", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "main_menu.mp3"));
+    musicService.loadMusic("eternal_moment", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "eternal_moment.mp3"));
+    musicService.loadMusic("quiet_day", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "quiet_day.mp3"));
+    musicService.loadMusic("the_place", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "the_place.mp3"));
+    musicService.loadMusic("your_memory", AssetPathResolver::resolveMusicPath(argc > 0 ? argv[0] : nullptr, "your_memory.mp3"));
+    musicService.setMainMenuMusic("main_menu");
+    musicService.addGameMusic("eternal_moment");
+    musicService.addGameMusic("quiet_day");
+    musicService.addGameMusic("the_place");
+    musicService.addGameMusic("your_memory");
+    musicService.playMainMenuMusic();
+
+    soundEffectService.loadSound(SoundEffectType::BetweenOptions,
+                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "between_options.mp3"));
+    soundEffectService.loadSound(SoundEffectType::DestinationReached,
+                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "destination_reached.mp3"));
+    soundEffectService.loadSound(SoundEffectType::RouteFixated,
+                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "route_fixated.mp3"));
+    soundEffectService.loadSound(SoundEffectType::WallBump,
+                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "wall_bump.mp3"));
+    soundEffectService.loadSound(SoundEffectType::SelectButton,
+                                 AssetPathResolver::resolveSFXPath(argc > 0 ? argv[0] : nullptr, "select_button.mp3"));
 
     const std::vector<SceneConfig> allScenes = {
         {"Exteriorcafeteria", "assets/maps/Exteriorcafeteria.png", "assets/maps/Exteriorcafeteria.tmj"},
@@ -591,12 +620,20 @@ int main(int argc, char* argv[]) {
 
     if (!kIntroMenuEnabled) {
         startGameplay();
+        musicService.playGameplayMusic();
     }
+
+    int previousStartMenuSelection = menuSelection;
+    bool previousRouteCompleted = false;
+    float wallBumpCooldown = 0.0f;
 
     while (!WindowShouldClose() && !exitRequested) {
         const float dt = GetFrameTime();
+        wallBumpCooldown = std::max(0.0f, wallBumpCooldown - dt);
+        musicService.update();
 
         if (appMode == AppMode::StartMenu) {
+            musicService.playMainMenuMusic();
             const MapRenderData& previewMap = sceneManager.getMapData();
 
             if (!intro.transitioning) {
@@ -698,11 +735,17 @@ int main(int argc, char* argv[]) {
             const Vector2 mouse = GetMousePosition();
             if (CheckCollisionPointRec(mouse, startRect)) menuSelection = 0;
             if (CheckCollisionPointRec(mouse, exitRect)) menuSelection = 1;
+            if (menuSelection != previousStartMenuSelection) {
+                soundEffectService.play(SoundEffectType::BetweenOptions);
+                previousStartMenuSelection = menuSelection;
+            }
 
             const bool activate = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
             if (activate) {
+                soundEffectService.play(SoundEffectType::SelectButton);
                 if (menuSelection == 0) {
                     startGameplay();
+                    musicService.playGameplayMusic();
                     appMode = AppMode::Gameplay;
                 } else {
                     exitRequested = true;
@@ -785,6 +828,9 @@ int main(int argc, char* argv[]) {
 
         const InputState input = inputManager.poll(uiState.infoMenuOpen);
         uiManager.handleInput(input, uiState);
+        if (input.toggleInfoMenu) {
+            soundEffectService.play(SoundEffectType::SelectButton);
+        }
 
         if (!uiState.infoMenuOpen && input.zoomWheelDelta != 0.0f) {
             gameController.applyZoom(input.zoomWheelDelta);
@@ -792,12 +838,20 @@ int main(int argc, char* argv[]) {
 
         sceneManager.refreshHitboxes(sceneDataMap, runtimeBlockerService);
         gameController.update(dt, input, sceneManager.getMapData());
+        if (gameController.hadCollisionThisFrame() && wallBumpCooldown <= 0.0f) {
+            soundEffectService.play(SoundEffectType::WallBump);
+            wallBumpCooldown = 0.25f;
+        }
         gameController.clampCameraToMap(sceneManager.getMapData(), screenWidth, screenHeight);
 
+        previousRouteCompleted = routeState.routeTravelCompleted;
         runtimeNavigation.refreshRoute(routeState, tabState, graph, scenarioManager,
                                        complexityAnalyzer, sceneLinks, sceneManager.getMapData(),
                                        sceneManager.getCurrentSceneName(), gameController.getPlayerPos(), dt,
                                        sceneDisplayName, sceneTargetPoint);
+        if (!previousRouteCompleted && routeState.routeTravelCompleted) {
+            soundEffectService.play(SoundEffectType::DestinationReached);
+        }
 
         if (uiState.showNavigationGraph) {
             const std::vector<std::string> dfsOverlayNodes =
@@ -883,12 +937,16 @@ int main(int argc, char* argv[]) {
 
         uiManager.renderScreen(ctx, uiState, routeState, routeScenes, sceneDisplayName, graph, tabState,
                                navService, scenarioManager, complexityAnalyzer, runtimeBlockerService,
-                               destinationCatalog, resilienceService, transitions, sceneDataMap);
+                               destinationCatalog, musicService, soundEffectService,
+                               resilienceService, transitions, sceneDataMap);
         EndDrawing();
     }
 
     sceneManager.unload();
     gameController.unloadPlayerSprites();
+    musicService.unloadAll();
+    soundEffectService.unloadAll();
+    AudioManager::getInstance().shutdown();
     rlImGuiShutdown();
     CloseWindow();
     return 0;

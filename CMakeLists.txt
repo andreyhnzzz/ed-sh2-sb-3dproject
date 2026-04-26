@@ -93,9 +93,12 @@ set(SOURCES
         src/repositories/JsonGraphRepository.cpp
         src/services/NavigationService.cpp
         src/services/DataManager.cpp
+        src/services/AudioManager.cpp
         src/services/ScenarioManager.cpp
         src/services/ComplexityAnalyzer.cpp
+        src/services/MusicService.cpp
         src/services/ResilienceService.cpp
+        src/services/SoundEffectService.cpp
         src/services/TransitionService.cpp
         src/services/TmjLoader.cpp
         src/services/StringUtils.cpp

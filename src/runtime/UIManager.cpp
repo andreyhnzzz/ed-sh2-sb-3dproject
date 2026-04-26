@@ -7,6 +7,7 @@
 #include "services/ScenePlanService.h"
 #include "services/StringUtils.h"
 #include "services/WalkablePathService.h"
+#include "services/AudioManager.h"
 
 #include <algorithm>
 #include <cmath>
@@ -435,6 +436,8 @@ void UIManager::renderScreen(const RenderContext& ctx,
                              ComplexityAnalyzer& complexityAnalyzer,
                              RuntimeBlockerService& runtimeBlockerService,
                              const DestinationCatalog& destinationCatalog,
+                             MusicService& musicService,
+                             SoundEffectService& soundEffectService,
                              ResilienceService& resilienceService,
                              TransitionService& transitions,
                              const std::unordered_map<std::string, SceneData>& sceneDataMap) const {
@@ -455,7 +458,8 @@ void UIManager::renderScreen(const RenderContext& ctx,
                                 resilienceService.getBlockedNodes());
 
     renderInfoMenu(ctx, state, routeState, routeScenes, sceneDisplayName, graph, tabState,
-                   scenarioManager, runtimeBlockerService, destinationCatalog, resilienceService);
+                   scenarioManager, runtimeBlockerService, destinationCatalog,
+                   musicService, soundEffectService, resilienceService);
 
     if (!state.infoMenuOpen) {
         rlImGuiBegin();
@@ -636,6 +640,8 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
                                ScenarioManager& scenarioManager,
                                RuntimeBlockerService& runtimeBlockerService,
                                const DestinationCatalog& destinationCatalog,
+                               MusicService& musicService,
+                               SoundEffectService& soundEffectService,
                                ResilienceService& resilienceService) const {
     if (!state.infoMenuOpen) return;
 
@@ -674,6 +680,7 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
                        static_cast<float>(px(32)), static_cast<float>(px(32))};
     if (drawRayButton(closeBtn, "X", titleFont, Color{26, 62, 115, 245}, Color{36, 81, 148, 255},
                       Color{60, 95, 155, 255}, white)) {
+        soundEffectService.play(SoundEffectType::SelectButton);
         state.infoMenuOpen = false;
         return;
     }
@@ -713,10 +720,12 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             routeState.selectedDestinationIdx =
                 (routeState.selectedDestinationIdx - 1 + static_cast<int>(routeScenes.size())) %
                 static_cast<int>(routeScenes.size());
+            soundEffectService.play(SoundEffectType::BetweenOptions);
         }
         if (drawRayButton(nextBtn, ">", px(20), btn, btnHover, btnActive, white)) {
             routeState.selectedDestinationIdx =
                 (routeState.selectedDestinationIdx + 1) % static_cast<int>(routeScenes.size());
+            soundEffectService.play(SoundEffectType::BetweenOptions);
         }
         selectedLabel = routeScenes[routeState.selectedDestinationIdx].second;
     }
@@ -741,6 +750,7 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
         routeState.routeLegSceneId.clear();
         routeState.routeLegNextSceneId.clear();
         routeState.routeRefreshCooldown = 0.0f;
+        soundEffectService.play(SoundEffectType::RouteFixated);
     }
     if (drawRayButton(clearBtn, "Clear", bodyFont, btn, btnHover, btnActive, white)) {
         routeState.routeActive = false;
@@ -756,6 +766,7 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
         routeState.routeNextHint.clear();
         tabState.lastPath = {};
         tabState.hasPath = false;
+        soundEffectService.play(SoundEffectType::SelectButton);
     }
     yLeft += px(52);
 
@@ -792,6 +803,42 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
                             : (scenarioManager.getStudentType() == StudentType::DISABLED_STUDENT ? "Disabled" : "Veteran")),
              rightX + sectionPad, yRight, bodyMutedFont, muted); yRight += px(30);
 
+    const float musicVolume = AudioManager::getInstance().getMusicVolume();
+    const float sfxVolume = AudioManager::getInstance().getSFXVolume();
+    DrawText(TextFormat("Music volume: %d%%", static_cast<int>(std::round(musicVolume * 100.0f))),
+             rightX + sectionPad, yRight, bodyMutedFont, muted);
+    yRight += px(24);
+    Rectangle musicDownBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
+                           static_cast<float>(px(44)), static_cast<float>(buttonHeight)};
+    Rectangle musicUpBtn{static_cast<float>(rightX + sectionPad + px(54)), static_cast<float>(yRight),
+                         static_cast<float>(px(44)), static_cast<float>(buttonHeight)};
+    if (drawRayButton(musicDownBtn, "-", bodyFont, btn, btnHover, btnActive, white)) {
+        musicService.setVolume(musicVolume - 0.05f);
+        soundEffectService.play(SoundEffectType::BetweenOptions);
+    }
+    if (drawRayButton(musicUpBtn, "+", bodyFont, btn, btnHover, btnActive, white)) {
+        musicService.setVolume(musicVolume + 0.05f);
+        soundEffectService.play(SoundEffectType::BetweenOptions);
+    }
+    yRight += px(46);
+
+    DrawText(TextFormat("SFX volume: %d%%", static_cast<int>(std::round(sfxVolume * 100.0f))),
+             rightX + sectionPad, yRight, bodyMutedFont, muted);
+    yRight += px(24);
+    Rectangle sfxDownBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
+                         static_cast<float>(px(44)), static_cast<float>(buttonHeight)};
+    Rectangle sfxUpBtn{static_cast<float>(rightX + sectionPad + px(54)), static_cast<float>(yRight),
+                       static_cast<float>(px(44)), static_cast<float>(buttonHeight)};
+    if (drawRayButton(sfxDownBtn, "-", bodyFont, btn, btnHover, btnActive, white)) {
+        soundEffectService.setVolume(sfxVolume - 0.05f);
+        soundEffectService.play(SoundEffectType::BetweenOptions);
+    }
+    if (drawRayButton(sfxUpBtn, "+", bodyFont, btn, btnHover, btnActive, white)) {
+        soundEffectService.setVolume(sfxVolume + 0.05f);
+        soundEffectService.play(SoundEffectType::BetweenOptions);
+    }
+    yRight += px(54);
+
     Rectangle graphToggleBtn{static_cast<float>(rightX + sectionPad), static_cast<float>(yRight),
                              static_cast<float>(px(290)), static_cast<float>(buttonHeight)};
     if (drawRayButton(graphToggleBtn,
@@ -799,6 +846,7 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
                                                 : "Grafo navegacion: OFF",
                       bodyFont, btn, btnHover, btnActive, white)) {
         state.showNavigationGraph = !state.showNavigationGraph;
+        soundEffectService.play(SoundEffectType::SelectButton);
     }
     yRight += px(54);
 
@@ -817,14 +865,17 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
     if (drawRayButton(newProfileBtn, "Nuevo", bodyMutedFont, btn, btnHover, btnActive, white)) {
         scenarioManager.setStudentType(StudentType::NEW_STUDENT);
         routeState.routeRefreshCooldown = 0.0f;
+        soundEffectService.play(SoundEffectType::SelectButton);
     }
     if (drawRayButton(veteranProfileBtn, "Veterano", bodyMutedFont, btn, btnHover, btnActive, white)) {
         scenarioManager.setStudentType(StudentType::VETERAN_STUDENT);
         routeState.routeRefreshCooldown = 0.0f;
+        soundEffectService.play(SoundEffectType::SelectButton);
     }
     if (drawRayButton(disabledProfileBtn, "Discapacitado", bodyMutedFont, btn, btnHover, btnActive, white)) {
         scenarioManager.setStudentType(StudentType::DISABLED_STUDENT);
         routeState.routeRefreshCooldown = 0.0f;
+        soundEffectService.play(SoundEffectType::SelectButton);
     }
     yRight += px(54);
 
@@ -844,10 +895,12 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             state.selectedBlockedNodeIdx =
                 (state.selectedBlockedNodeIdx - 1 + static_cast<int>(blockNodeOptions.size())) %
                 static_cast<int>(blockNodeOptions.size());
+            soundEffectService.play(SoundEffectType::BetweenOptions);
         }
         if (drawRayButton(nextNodeBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
             state.selectedBlockedNodeIdx =
                 (state.selectedBlockedNodeIdx + 1) % static_cast<int>(blockNodeOptions.size());
+            soundEffectService.play(SoundEffectType::BetweenOptions);
         }
         DrawRectangleRec(nodeLabelBox, Color{16, 34, 58, 255});
         DrawRectangleLinesEx(nodeLabelBox, 1.5f, Color{80, 118, 170, 220});
@@ -874,10 +927,12 @@ void UIManager::renderInfoMenu(const RenderContext& ctx,
             state.selectedBlockedEdgeIdx =
                 (state.selectedBlockedEdgeIdx - 1 + static_cast<int>(blockEdgeOptions.size())) %
                 static_cast<int>(blockEdgeOptions.size());
+            soundEffectService.play(SoundEffectType::BetweenOptions);
         }
         if (drawRayButton(nextEdgeBtn, ">", bodyFont, btn, btnHover, btnActive, white)) {
             state.selectedBlockedEdgeIdx =
                 (state.selectedBlockedEdgeIdx + 1) % static_cast<int>(blockEdgeOptions.size());
+            soundEffectService.play(SoundEffectType::BetweenOptions);
         }
         DrawRectangleRec(edgeLabelBox, Color{16, 34, 58, 255});
         DrawRectangleLinesEx(edgeLabelBox, 1.5f, Color{80, 118, 170, 220});

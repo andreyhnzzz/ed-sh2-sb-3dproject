@@ -14,6 +14,7 @@ GameController::GameController(Config config) : config_(config) {
 }
 
 void GameController::update(float dt, const InputState& input, MapRenderData& mapData) {
+    hadCollisionThisFrame_ = false;
     sprinting_ = input.sprinting;
     const float currentSpeed = config_.baseSpeed * (sprinting_ ? config_.sprintMultiplier : 1.0f);
 
@@ -24,6 +25,8 @@ void GameController::update(float dt, const InputState& input, MapRenderData& ma
     }
     if (!WalkablePathService::intersectsAny(WalkablePathService::playerColliderAt(candidate), mapData.hitboxes)) {
         playerPos_.x = candidate.x;
+    } else if (std::fabs(input.moveX) > 0.0f) {
+        hadCollisionThisFrame_ = true;
     }
 
     candidate = playerPos_;
@@ -33,6 +36,8 @@ void GameController::update(float dt, const InputState& input, MapRenderData& ma
     }
     if (!WalkablePathService::intersectsAny(WalkablePathService::playerColliderAt(candidate), mapData.hitboxes)) {
         playerPos_.y = candidate.y;
+    } else if (std::fabs(input.moveY) > 0.0f) {
+        hadCollisionThisFrame_ = true;
     }
 
     isMoving_ = (input.moveX != 0.0f || input.moveY != 0.0f);
@@ -173,4 +178,8 @@ Vector2 GameController::getPlayerPos() const {
 
 bool GameController::isMoving() const {
     return isMoving_;
+}
+
+bool GameController::hadCollisionThisFrame() const {
+    return hadCollisionThisFrame_;
 }

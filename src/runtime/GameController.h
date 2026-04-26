@@ -35,6 +35,7 @@ public:
     const SpriteAnim& getPlayerAnim() const;
     Vector2 getPlayerPos() const;
     bool isMoving() const;
+    bool hadCollisionThisFrame() const;
 
 private:
     Config config_;
@@ -43,4 +44,5 @@ private:
     SpriteAnim playerAnim_{};
     bool isMoving_{false};
     bool sprinting_{false};
+    bool hadCollisionThisFrame_{false};
 };
