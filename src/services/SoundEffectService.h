@@ -10,8 +10,7 @@ enum class SoundEffectType {
     DestinationReached,
     RouteFixated,
     WallBump,
-    SelectButton,
-    ItsMe
+    SelectButton
 };
 
 class SoundEffectService {

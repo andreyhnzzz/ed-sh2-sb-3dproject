@@ -200,20 +200,42 @@ bool drawHorizontalSlider(const Rectangle& track,
 
 bool linkMatchesEdgeType(SceneLinkType linkType, const std::string& edgeType) {
     const std::string lowered = StringUtils::toLowerCopy(edgeType);
+    const bool hasLeft = lowered.find("left") != std::string::npos ||
+                         lowered.find("izq") != std::string::npos;
+    const bool hasRight = lowered.find("right") != std::string::npos ||
+                          lowered.find("der") != std::string::npos;
     switch (linkType) {
         case SceneLinkType::Elevator: return lowered.find("elev") != std::string::npos;
         case SceneLinkType::StairLeft:
+            return (lowered.find("escal") != std::string::npos ||
+                    lowered.find("stair") != std::string::npos) &&
+                   hasLeft;
         case SceneLinkType::StairRight:
-            return lowered.find("escal") != std::string::npos ||
-                   lowered.find("stair") != std::string::npos;
+            return (lowered.find("escal") != std::string::npos ||
+                    lowered.find("stair") != std::string::npos) &&
+                   hasRight;
         case SceneLinkType::Portal:
         default: return lowered.find("portal") != std::string::npos;
     }
 }
 
+bool isStairLikeLink(const SceneLink& link) {
+    if (link.type == SceneLinkType::StairLeft || link.type == SceneLinkType::StairRight) return true;
+    const std::string idLower = StringUtils::toLowerCopy(link.id);
+    const std::string labelLower = StringUtils::toLowerCopy(link.label);
+    return idLower.find("stair") != std::string::npos ||
+           idLower.find("escalera") != std::string::npos ||
+           labelLower.find("stair") != std::string::npos ||
+           labelLower.find("escalera") != std::string::npos;
+}
+
 const Edge* findBestEdgeForLink(const CampusGraph& graph,
                                 const std::string& fromSceneId,
                                 const SceneLink& link) {
+    if (isStairLikeLink(link) && link.type == SceneLinkType::Portal) {
+        return nullptr;
+    }
+
     const Edge* best = nullptr;
     for (const auto& edge : graph.edgesFrom(fromSceneId)) {
         if (edge.to != StringUtils::toLowerCopy(link.toScene)) continue;
@@ -222,6 +244,11 @@ const Edge* findBestEdgeForLink(const CampusGraph& graph,
     }
 
     if (best) return best;
+    if (link.type == SceneLinkType::StairLeft ||
+        link.type == SceneLinkType::StairRight ||
+        link.type == SceneLinkType::Elevator) {
+        return nullptr;
+    }
 
     for (const auto& edge : graph.edgesFrom(fromSceneId)) {
         if (edge.to == StringUtils::toLowerCopy(link.toScene)) {
@@ -301,14 +328,16 @@ void drawCurrentSceneNavigationOverlay(const CampusGraph& graph,
         if (StringUtils::toLowerCopy(link.fromScene) != currentSceneId) continue;
 
         const Edge* edge = findBestEdgeForLink(graph, currentSceneId, link);
-        const std::string dedupeKey = currentSceneId + "|" + StringUtils::toLowerCopy(link.toScene) + "|" +
-                                      (edge ? edge->type : std::string("link"));
+        const std::string dedupeKey = currentSceneId + "|" +
+                                      StringUtils::toLowerCopy(link.toScene) + "|" +
+                                      StringUtils::toLowerCopy(link.id);
         if (!drawnTargets.insert(dedupeKey).second) continue;
 
         const Vector2 targetPos = WalkablePathService::rectCenter(link.triggerRect);
         const bool edgeAllowed = edge ? isOverlayEdgeAllowed(*edge, mobilityReduced)
                                       : ScenePlanService::isLinkAllowed(link, mobilityReduced);
-        const bool onActivePath = pathContainsDirectedStep(activePathNodes, currentSceneId,
+        const bool onActivePath = edgeAllowed &&
+                                  pathContainsDirectedStep(activePathNodes, currentSceneId,
                                                            StringUtils::toLowerCopy(link.toScene));
 
         const Color edgeColor = onActivePath

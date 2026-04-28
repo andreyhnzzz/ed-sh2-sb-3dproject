@@ -1,14 +1,68 @@
 {
   "nodes": [
-    {"id": "paradadebus", "name": "Parada de Bus", "type": "Exterior", "scene": "Paradadebus", "spawn_id": "bus_arrive"},
-    {"id": "exteriorcafeteria", "name": "Exterior Cafeteria", "type": "Exterior", "scene": "Exteriorcafeteria", "spawn_id": "ext_from_bus"},
-    {"id": "interiorcafeteria", "name": "Interior Cafeteria", "type": "Interior", "scene": "Interiorcafeteria", "spawn_id": "intcafe_arrive"},
-    {"id": "biblio", "name": "Biblioteca", "type": "Biblioteca", "scene": "biblio", "spawn_id": "biblio_main_arrive"},
-    {"id": "piso1", "name": "Piso 1", "type": "K-5", "scene": "piso1", "spawn_id": "elevator_arrive"},
-    {"id": "piso2", "name": "Piso 2", "type": "K-5", "scene": "piso2", "spawn_id": "elevator_arrive"},
-    {"id": "piso3", "name": "Piso 3", "type": "K-5", "scene": "piso3", "spawn_id": "elevator_arrive"},
-    {"id": "piso4", "name": "Piso 4", "type": "K-5", "scene": "piso4", "spawn_id": "elevator_arrive"},
-    {"id": "piso5", "name": "Piso 5", "type": "K-5", "scene": "piso5", "spawn_id": "elevator_arrive"}
+    {
+      "id": "paradadebus",
+      "name": "Parada de Bus",
+      "type": "Exterior",
+      "scene": "Paradadebus",
+      "spawn_id": "bus_arrive"
+    },
+    {
+      "id": "exteriorcafeteria",
+      "name": "Exterior Cafeteria",
+      "type": "Exterior",
+      "scene": "Exteriorcafeteria",
+      "spawn_id": "ext_from_bus"
+    },
+    {
+      "id": "interiorcafeteria",
+      "name": "Interior Cafeteria",
+      "type": "Interior",
+      "scene": "Interiorcafeteria",
+      "spawn_id": "intcafe_arrive"
+    },
+    {
+      "id": "biblio",
+      "name": "Biblioteca",
+      "type": "Biblioteca",
+      "scene": "biblio",
+      "spawn_id": "biblio_main_arrive"
+    },
+    {
+      "id": "piso1",
+      "name": "Piso 1",
+      "type": "K-5",
+      "scene": "piso1",
+      "spawn_id": "elevator_arrive"
+    },
+    {
+      "id": "piso2",
+      "name": "Piso 2",
+      "type": "K-5",
+      "scene": "piso2",
+      "spawn_id": "elevator_arrive"
+    },
+    {
+      "id": "piso3",
+      "name": "Piso 3",
+      "type": "K-5",
+      "scene": "piso3",
+      "spawn_id": "elevator_arrive"
+    },
+    {
+      "id": "piso4",
+      "name": "Piso 4",
+      "type": "K-5",
+      "scene": "piso4",
+      "spawn_id": "elevator_arrive"
+    },
+    {
+      "id": "piso5",
+      "name": "Piso 5",
+      "type": "K-5",
+      "scene": "piso5",
+      "spawn_id": "elevator_arrive"
+    }
   ],
   "edges": [
     {
@@ -16,40 +70,55 @@
       "from": "paradadebus",
       "to": "exteriorcafeteria",
       "type": "Portal",
-      "from_anchor": {"scene": "Paradadebus", "spawn_id": "bus_arrive"},
-      "to_anchor": {"scene": "Exteriorcafeteria", "spawn_id": "ext_from_bus"}
+      "from_anchor": { "scene": "Paradadebus", "spawn_id": "bus_arrive" },
+      "to_anchor": { "scene": "Exteriorcafeteria", "spawn_id": "ext_from_bus" }
     },
     {
       "id": "ext_intcafe",
       "from": "exteriorcafeteria",
       "to": "interiorcafeteria",
       "type": "Portal",
-      "from_anchor": {"scene": "Exteriorcafeteria", "spawn_id": "ext_from_intcafe"},
-      "to_anchor": {"scene": "Interiorcafeteria", "spawn_id": "intcafe_arrive"}
+      "from_anchor": {
+        "scene": "Exteriorcafeteria",
+        "spawn_id": "ext_from_intcafe"
+      },
+      "to_anchor": {
+        "scene": "Interiorcafeteria",
+        "spawn_id": "intcafe_arrive"
+      }
     },
     {
       "id": "ext_biblio",
       "from": "exteriorcafeteria",
       "to": "biblio",
       "type": "Portal",
-      "from_anchor": {"scene": "Exteriorcafeteria", "spawn_id": "ext_from_biblio"},
-      "to_anchor": {"scene": "biblio", "spawn_id": "biblio_main_arrive"}
+      "from_anchor": {
+        "scene": "Exteriorcafeteria",
+        "spawn_id": "ext_from_biblio"
+      },
+      "to_anchor": { "scene": "biblio", "spawn_id": "biblio_main_arrive" }
     },
     {
       "id": "ext_piso4_main",
       "from": "exteriorcafeteria",
       "to": "piso4",
       "type": "Portal Principal",
-      "from_anchor": {"scene": "Exteriorcafeteria", "spawn_id": "ext_from_piso4_main_L"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "piso4_main_L_arrive"}
+      "from_anchor": {
+        "scene": "Exteriorcafeteria",
+        "spawn_id": "ext_from_piso4_main_L"
+      },
+      "to_anchor": { "scene": "piso4", "spawn_id": "piso4_main_L_arrive" }
     },
     {
       "id": "ext_piso4_sec",
       "from": "exteriorcafeteria",
       "to": "piso4",
       "type": "Portal Secundario",
-      "from_anchor": {"scene": "Exteriorcafeteria", "spawn_id": "ext_from_piso4_sec"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "piso4_sec_arrive"}
+      "from_anchor": {
+        "scene": "Exteriorcafeteria",
+        "spawn_id": "ext_from_piso4_sec"
+      },
+      "to_anchor": { "scene": "piso4", "spawn_id": "piso4_sec_arrive" }
     },
 
     {
@@ -57,24 +126,24 @@
       "from": "piso1",
       "to": "piso2",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso1", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso2", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso2", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_1_2",
       "from": "piso1",
       "to": "piso2",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso1", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso2", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso2", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_1_2",
       "from": "piso1",
       "to": "piso2",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso1", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso2", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso2", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -82,24 +151,24 @@
       "from": "piso1",
       "to": "piso3",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso1", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso3", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso3", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_1_3",
       "from": "piso1",
       "to": "piso3",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso1", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso3", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso3", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_1_3",
       "from": "piso1",
       "to": "piso3",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso1", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso3", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso3", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -107,24 +176,24 @@
       "from": "piso1",
       "to": "piso4",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso1", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_1_4",
       "from": "piso1",
       "to": "piso4",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso1", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_1_4",
       "from": "piso1",
       "to": "piso4",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso1", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -132,24 +201,24 @@
       "from": "piso1",
       "to": "piso5",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso1", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_1_5",
       "from": "piso1",
       "to": "piso5",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso1", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_1_5",
       "from": "piso1",
       "to": "piso5",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso1", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso1", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -157,24 +226,24 @@
       "from": "piso2",
       "to": "piso3",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso2", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso3", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso3", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_2_3",
       "from": "piso2",
       "to": "piso3",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso2", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso3", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso3", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_2_3",
       "from": "piso2",
       "to": "piso3",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso2", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso3", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso3", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -182,24 +251,24 @@
       "from": "piso2",
       "to": "piso4",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso2", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_2_4",
       "from": "piso2",
       "to": "piso4",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso2", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_2_4",
       "from": "piso2",
       "to": "piso4",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso2", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -207,24 +276,24 @@
       "from": "piso2",
       "to": "piso5",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso2", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_2_5",
       "from": "piso2",
       "to": "piso5",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso2", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_2_5",
       "from": "piso2",
       "to": "piso5",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso2", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso2", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -232,24 +301,24 @@
       "from": "piso3",
       "to": "piso4",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso3", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso3", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_3_4",
       "from": "piso3",
       "to": "piso4",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso3", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso3", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_3_4",
       "from": "piso3",
       "to": "piso4",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso3", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso4", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso3", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso4", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -257,24 +326,24 @@
       "from": "piso3",
       "to": "piso5",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso3", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso3", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_3_5",
       "from": "piso3",
       "to": "piso5",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso3", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso3", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_3_5",
       "from": "piso3",
       "to": "piso5",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso3", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso3", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "stair_right_arrive" }
     },
 
     {
@@ -282,24 +351,24 @@
       "from": "piso4",
       "to": "piso5",
       "type": "Elevador",
-      "from_anchor": {"scene": "piso4", "spawn_id": "elevator_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "elevator_arrive"}
+      "from_anchor": { "scene": "piso4", "spawn_id": "elevator_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "elevator_arrive" }
     },
     {
       "id": "esc_izq_4_5",
       "from": "piso4",
       "to": "piso5",
       "type": "Escalera Izquierda",
-      "from_anchor": {"scene": "piso4", "spawn_id": "stair_left_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "stair_left_arrive"}
+      "from_anchor": { "scene": "piso4", "spawn_id": "stair_left_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "stair_left_arrive" }
     },
     {
       "id": "esc_der_4_5",
       "from": "piso4",
       "to": "piso5",
       "type": "Escalera Derecha",
-      "from_anchor": {"scene": "piso4", "spawn_id": "stair_right_arrive"},
-      "to_anchor": {"scene": "piso5", "spawn_id": "stair_right_arrive"}
+      "from_anchor": { "scene": "piso4", "spawn_id": "stair_right_arrive" },
+      "to_anchor": { "scene": "piso5", "spawn_id": "stair_right_arrive" }
     }
   ]
 }

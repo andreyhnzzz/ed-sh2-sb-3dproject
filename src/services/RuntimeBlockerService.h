@@ -43,6 +43,12 @@ public:
     std::vector<Rectangle> collisionRectsForScene(const std::string& sceneId) const;
 
 private:
+    struct AccessibilityBlockedEdge {
+        std::string from;
+        std::string to;
+        std::string type;
+    };
+
     static std::string edgeKey(const std::string& from, const std::string& to, const std::string& type);
     void addCollisionRects(const std::string& sceneId, const std::vector<Rectangle>& rects);
 
@@ -52,6 +58,6 @@ private:
     std::unordered_set<std::string> blockedEdgeKeys_;
     std::unordered_map<std::string, std::vector<Rectangle>> sceneCollisionRects_;
     bool accessibilityStairBlocksEnabled_{false};
-    std::vector<std::pair<std::string, std::string>> accessibilityBlockedPairs_;
+    std::vector<AccessibilityBlockedEdge> accessibilityBlockedEdges_;
     std::unordered_map<std::string, std::vector<Rectangle>> accessibilitySceneCollisionRects_;
 };

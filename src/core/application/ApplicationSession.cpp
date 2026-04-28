@@ -68,9 +68,6 @@ int ApplicationSession::run() {
 
         if (gameplayController_.has_value()) {
             gameplayController_->runFrame(dt);
-            if (easterEggManager_.shouldCloseApplication()) {
-                exitRequested = true;
-            }
         }
     }
 
@@ -165,13 +162,11 @@ void ApplicationSession::initializeControllers() {
                                 runtimeBlockerService_,
                                 musicService_,
                                 soundEffectService_,
-                                easterEggManager_,
                                 sceneBootstrap_,
                                 routeScenes_,
                                 tabState_,
                                 uiState_,
                                 routeState_,
-                                executablePath_,
                                 [this](std::string sceneName) { return canonicalSceneId(std::move(sceneName)); },
                                 [this](const std::string& sceneName) {
                                     return sceneBootstrap_.sceneDisplayName(sceneName, destinationCatalog_);

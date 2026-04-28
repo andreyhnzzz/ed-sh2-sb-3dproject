@@ -9197,13 +9197,13 @@
     {
      "height": 8,
      "id": 79,
-     "name": "biblio_to_ext",
+         "name": "biblio_to_ext_elevador",
      "opacity": 1,
      "properties": [
       {
        "name": "portal_id",
        "type": "string",
-       "value": "biblio_to_ext"
+             "value": "biblio_to_ext_elevador"
       },
       {
        "name": "requires_e",
@@ -9227,6 +9227,40 @@
      "width": 14,
      "x": 104,
      "y": 530
+    },
+    {
+     "height": 10,
+     "id": 81,
+     "name": "biblio_to_ext_escalera",
+     "opacity": 1,
+     "properties": [
+      {
+       "name": "portal_id",
+       "type": "string",
+       "value": "biblio_to_ext_escalera"
+      },
+      {
+       "name": "requires_e",
+       "type": "bool",
+       "value": false
+      },
+      {
+       "name": "to_scene",
+       "type": "string",
+       "value": "Exteriorcafeteria"
+      },
+      {
+       "name": "to_spawn",
+       "type": "string",
+       "value": "ext_from_biblio"
+      }
+     ],
+     "rotation": 0,
+     "type": "",
+     "visible": true,
+     "width": 10,
+     "x": 233,
+     "y": 551
     }
    ],
    "opacity": 1,
@@ -9267,7 +9301,7 @@
   }
  ],
  "nextlayerid": 11,
- "nextobjectid": 81,
+ "nextobjectid": 82,
  "orientation": "orthogonal",
  "renderorder": "right-down",
  "tiledversion": "1.12.1",
