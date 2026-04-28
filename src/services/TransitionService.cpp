@@ -94,27 +94,7 @@ void TransitionService::update(const Rectangle& playerCollider,
     }
 
     // -----------------------------------------------------------------------
-    // Uni-directional portal triggers (loaded from TMJ)
-    // -----------------------------------------------------------------------
-    for (const auto& portal : uniPortals_) {
-        if (portal.scene != currentScene) continue;
-        if (!CheckCollisionRecs(playerCollider, portal.triggerRect)) continue;
-        if (!isDestinationAccessible(portal.targetScene)) continue;
-
-        if (portal.requiresE) {
-            promptVisible_ = true;
-            promptHint_    = "Press E";
-            if (IsKeyPressed(KEY_E)) {
-                beginFadeIn(portal.targetScene, portal.spawnPos);
-            }
-        } else {
-            beginFadeIn(portal.targetScene, portal.spawnPos);
-        }
-        return;
-    }
-
-    // -----------------------------------------------------------------------
-    // Floor elevator triggers
+    // Floor elevator triggers (priority over uni-portals when close/overlapping)
     // -----------------------------------------------------------------------
     for (int i = 0; i < static_cast<int>(elevators_.size()); ++i) {
         const auto& elev = elevators_[i];
@@ -139,6 +119,26 @@ void TransitionService::update(const Rectangle& playerCollider,
             activeElevatorIdx_ = i;
             selectedFloorIdx_  = 0;
             floorMenuConfirmArmed_ = false;
+        }
+        return;
+    }
+
+    // -----------------------------------------------------------------------
+    // Uni-directional portal triggers (loaded from TMJ)
+    // -----------------------------------------------------------------------
+    for (const auto& portal : uniPortals_) {
+        if (portal.scene != currentScene) continue;
+        if (!CheckCollisionRecs(playerCollider, portal.triggerRect)) continue;
+        if (!isDestinationAccessible(portal.targetScene)) continue;
+
+        if (portal.requiresE) {
+            promptVisible_ = true;
+            promptHint_    = "Press E";
+            if (IsKeyPressed(KEY_E)) {
+                beginFadeIn(portal.targetScene, portal.spawnPos);
+            }
+        } else {
+            beginFadeIn(portal.targetScene, portal.spawnPos);
         }
         return;
     }

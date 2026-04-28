@@ -15,6 +15,25 @@ std::string toLower(std::string value) {
     return value;
 }
 
+bool isAccessibilityStairLink(const SceneLink& link) {
+    if (link.type == SceneLinkType::StairLeft || link.type == SceneLinkType::StairRight) {
+        return true;
+    }
+
+    const std::string idLower = toLower(link.id);
+    const std::string labelLower = toLower(link.label);
+    return idLower.find("stair") != std::string::npos ||
+           idLower.find("escalera") != std::string::npos ||
+           labelLower.find("stair") != std::string::npos ||
+           labelLower.find("escalera") != std::string::npos;
+}
+
+std::string accessibilityStairEdgeType(const SceneLink& link) {
+    if (link.type == SceneLinkType::StairLeft) return "Escalera Izquierda";
+    if (link.type == SceneLinkType::StairRight) return "Escalera Derecha";
+    return "";
+}
+
 Rectangle rectAroundPoint(const Vector2& point, float radius) {
     return Rectangle{point.x - radius, point.y - radius, radius * 2.0f, radius * 2.0f};
 }
@@ -124,7 +143,7 @@ void RuntimeBlockerService::clearAll(ResilienceService& resilienceService) {
     blockedNodeIds_.clear();
     blockedEdgeKeys_.clear();
     sceneCollisionRects_.clear();
-    accessibilityBlockedPairs_.clear();
+    accessibilityBlockedEdges_.clear();
     accessibilitySceneCollisionRects_.clear();
     accessibilityStairBlocksEnabled_ = false;
 }
@@ -134,10 +153,10 @@ void RuntimeBlockerService::setAccessibilityStairBlocks(
     ResilienceService& resilienceService,
     const std::vector<SceneLink>& sceneLinks) {
     if (!enabled) {
-        for (const auto& [from, to] : accessibilityBlockedPairs_) {
-            resilienceService.unblockEdge(from, to);
+        for (const auto& blocked : accessibilityBlockedEdges_) {
+            resilienceService.unblockEdge(blocked.from, blocked.to, blocked.type);
         }
-        accessibilityBlockedPairs_.clear();
+        accessibilityBlockedEdges_.clear();
         accessibilitySceneCollisionRects_.clear();
         accessibilityStairBlocksEnabled_ = false;
         return;
@@ -145,17 +164,20 @@ void RuntimeBlockerService::setAccessibilityStairBlocks(
 
     if (accessibilityStairBlocksEnabled_) return;
 
-    std::unordered_set<std::string> seenPairs;
+    std::unordered_set<std::string> seenEdges;
     std::unordered_set<std::string> seenRects;
     for (const auto& link : sceneLinks) {
-        const bool isStair =
-            link.type == SceneLinkType::StairLeft || link.type == SceneLinkType::StairRight;
-        if (!isStair) continue;
+        if (!isAccessibilityStairLink(link)) continue;
 
-        const std::string pairKey = edgeKey(link.fromScene, link.toScene, "accessibility_stair");
-        if (seenPairs.insert(pairKey).second) {
-            resilienceService.blockEdge(toLower(link.fromScene), toLower(link.toScene));
-            accessibilityBlockedPairs_.push_back({toLower(link.fromScene), toLower(link.toScene)});
+        const std::string edgeType = accessibilityStairEdgeType(link);
+        if (!edgeType.empty()) {
+            const std::string edgeBlockKey = edgeKey(link.fromScene, link.toScene, edgeType);
+            if (seenEdges.insert(edgeBlockKey).second) {
+                const std::string from = toLower(link.fromScene);
+                const std::string to = toLower(link.toScene);
+                resilienceService.blockEdge(from, to, edgeType);
+                accessibilityBlockedEdges_.push_back({from, to, edgeType});
+            }
         }
 
         const std::string collisionKey = rectKey(link.fromScene, link.triggerRect);

@@ -1,14 +1,36 @@
-﻿#include "ScenePlanService.h"
+#include "ScenePlanService.h"
 
 #include <algorithm>
+#include <cctype>
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
 
+namespace {
+std::string toLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+bool isStairLink(const SceneLink& link) {
+    if (link.type == SceneLinkType::StairLeft || link.type == SceneLinkType::StairRight) {
+        return true;
+    }
+
+    const std::string idLower = toLower(link.id);
+    const std::string labelLower = toLower(link.label);
+    return idLower.find("stair") != std::string::npos ||
+           idLower.find("escalera") != std::string::npos ||
+           labelLower.find("stair") != std::string::npos ||
+           labelLower.find("escalera") != std::string::npos;
+}
+} // namespace
+
 bool ScenePlanService::isLinkAllowed(const SceneLink& link, bool mobilityReduced) {
     if (!mobilityReduced) return true;
-    return link.type != SceneLinkType::StairLeft &&
-           link.type != SceneLinkType::StairRight;
+    return !isStairLink(link);
 }
 
 std::vector<std::string> ScenePlanService::buildScenePlan(
