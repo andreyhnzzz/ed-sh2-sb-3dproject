@@ -102,6 +102,7 @@ set(SOURCES
         src/services/MusicService.cpp
         src/services/ResilienceService.cpp
         src/services/SoundEffectService.cpp
+        src/services/EasterEggManager.cpp
         src/services/TransitionService.cpp
         src/services/TmjLoader.cpp
         src/services/StringUtils.cpp

@@ -30,6 +30,7 @@ SceneBootstrap SceneBootstrap::load(const char* executablePath, const std::strin
         {"piso3", "assets/maps/piso 3.png", "assets/maps/piso3.tmj"},
         {"piso4", "assets/maps/piso 4.png", "assets/maps/piso 4.tmj"},
         {"piso5", "assets/maps/piso 5.png", "assets/maps/piso 5.tmj"},
+        {"easter_egg", "assets/maps/easter_egg.png", "assets/maps/easter_egg.tmj"},
     };
 
     out.floorScenes = {

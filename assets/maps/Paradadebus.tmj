@@ -58979,6 +58979,25 @@
      "width": 10,
      "x": 1075,
      "y": 795
+    },
+    {
+     "height": 10,
+     "id": 120,
+     "name": "parada_from_exterior",
+     "opacity": 1,
+     "properties": [
+      {
+       "name": "spawn_id",
+       "type": "string",
+       "value": "parada_from_exterior"
+      }
+     ],
+     "rotation": 0,
+     "type": "",
+     "visible": true,
+     "width": 10,
+     "x": 381,
+     "y": 34
     }
    ],
    "opacity": 1,
@@ -58989,7 +59008,7 @@
   }
  ],
  "nextlayerid": 19,
- "nextobjectid": 120,
+ "nextobjectid": 121,
  "orientation": "orthogonal",
  "renderorder": "right-down",
  "tiledversion": "1.12.1",

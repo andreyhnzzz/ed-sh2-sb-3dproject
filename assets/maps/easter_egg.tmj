@@ -336,9 +336,37 @@
          "visible":true,
          "x":0,
          "y":0
+        },
+        {
+         "id":8,
+         "name":"Spawns",
+         "objects":[
+                {
+                 "height":10,
+                 "id":6,
+                 "name":"jeff_spawn",
+                 "opacity":1,
+                 "properties":[
+                        {
+                         "name":"spawn_id",
+                         "type":"string",
+                         "value":"jeff_spawn"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":10,
+                 "x":505,
+                 "y":370
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
         }],
- "nextlayerid":8,
- "nextobjectid":7,
+ "nextlayerid":9,
+ "nextobjectid":8,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.12.1",

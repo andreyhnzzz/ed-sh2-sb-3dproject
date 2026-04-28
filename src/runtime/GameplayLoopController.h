@@ -7,6 +7,7 @@
 #include "runtime/UIManager.h"
 #include "services/ComplexityAnalyzer.h"
 #include "services/DestinationCatalog.h"
+#include "services/EasterEggManager.h"
 #include "services/MusicService.h"
 #include "services/NavigationService.h"
 #include "services/ResilienceService.h"
@@ -43,11 +44,13 @@ public:
                            RuntimeBlockerService& runtimeBlockerService,
                            MusicService& musicService,
                            SoundEffectService& soundEffectService,
+                           EasterEggManager& easterEggManager,
                            const SceneBootstrap& sceneBootstrap,
                            const std::vector<std::pair<std::string, std::string>>& routeScenes,
                            TabManagerState& tabState,
                            UIManager::State& uiState,
                            RouteRuntimeState& routeState,
+                           const char* executablePath,
                            std::function<std::string(const std::string&)> canonicalSceneId,
                            std::function<std::string(const std::string&)> sceneDisplayName,
                            std::function<Vector2(const std::string&)> sceneTargetPoint);
@@ -77,11 +80,13 @@ private:
     RuntimeBlockerService& runtimeBlockerService_;
     MusicService& musicService_;
     SoundEffectService& soundEffectService_;
+    EasterEggManager& easterEggManager_;
     const SceneBootstrap& sceneBootstrap_;
     const std::vector<std::pair<std::string, std::string>>& routeScenes_;
     TabManagerState& tabState_;
     UIManager::State& uiState_;
     RouteRuntimeState& routeState_;
+    const char* executablePath_{nullptr};
     std::function<std::string(const std::string&)> canonicalSceneId_;
     std::function<std::string(const std::string&)> sceneDisplayName_;
     std::function<Vector2(const std::string&)> sceneTargetPoint_;

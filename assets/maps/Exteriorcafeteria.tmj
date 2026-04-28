@@ -102244,7 +102244,7 @@
       {
        "name": "to_spawn",
        "type": "string",
-       "value": "bus_arrive"
+       "value": "parada_from_exterior"
       }
      ],
      "rotation": 0,

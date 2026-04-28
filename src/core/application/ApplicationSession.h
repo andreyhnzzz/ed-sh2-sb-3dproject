@@ -11,6 +11,7 @@
 #include "services/ComplexityAnalyzer.h"
 #include "services/DataManager.h"
 #include "services/DestinationCatalog.h"
+#include "services/EasterEggManager.h"
 #include "services/MusicService.h"
 #include "services/NavigationService.h"
 #include "services/ResilienceService.h"
@@ -54,6 +55,7 @@ private:
 
     MusicService musicService_{};
     SoundEffectService soundEffectService_{};
+    EasterEggManager easterEggManager_{};
     DataManager dataManager_{};
     SceneBootstrap sceneBootstrap_{};
     CampusGraph graph_{};
